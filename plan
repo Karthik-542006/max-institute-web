@@ -1,0 +1,1121 @@
+Absolutely. For MAX Educational Institution, I’d build it as a real full-stack React + Supabase application, not just a static website.
+
+One small correction: I assume by “suba base” you mean Supabase, and by “Antigravity” you mean the development environment you’re using on your Mac.
+
+MAX Educational Institution — Full-Stack Website
+Recommended stack
+Layer	Technology
+Frontend	React + Vite
+Styling	Tailwind CSS
+UI	Modern component-based UI
+Icons	Lucide React
+Backend	Supabase
+Database	Supabase PostgreSQL
+Authentication	Supabase Auth
+Image Storage	Supabase Storage
+Forms	React + Supabase
+Admin Panel	React protected routes
+Deployment	Vercel / Netlify
+Maps	Google Maps embed
+Fonts	Inter / Plus Jakarta Sans
+Important design rule
+
+Don't use random emojis such as 🎓, 📞, 📍, ⭐, etc.
+
+Use Lucide icons with transparent backgrounds instead:
+
+GraduationCap
+BookOpen
+Monitor
+Keyboard
+Users
+Award
+MapPin
+Phone
+Mail
+Clock
+ChevronRight
+ArrowRight
+Menu
+X
+Star
+Quote
+Send
+Image
+Settings
+
+Icons should be SVG, so they naturally have transparent backgrounds and look consistent with the UI.
+
+1. Website Structure
+MAX Educational Institution
+│
+├── Home
+├── About
+├── Courses
+├── Why MAX
+├── Faculty
+├── Gallery
+├── Student Reviews
+├── FAQ
+├── Contact
+│
+└── Admin Portal
+      ├── Dashboard
+      ├── Courses
+      ├── Faculty
+      ├── Gallery
+      ├── Reviews
+      ├── Enquiries
+      └── Settings
+2. Home Page
+Hero Section
+MAX Educational Institution
+
+Empowering Students With Skills for Tomorrow
+
+Build practical knowledge, strengthen your technical skills, and prepare yourself for academic and career opportunities with structured training from experienced faculty.
+
+Buttons
+
+Explore Courses
+
+Contact MAX
+
+Right side:
+
+Professional institute image
+Subtle glass card
+Floating course/stat cards
+No unnecessary decoration
+Small information cards
+Experienced Faculty
+Structured Learning
+Practical Training
+Career-Focused Courses
+3. About MAX
+About MAX Educational Institution
+
+A structured learning environment focused on knowledge, skills and student growth.
+
+MAX Educational Institution provides students with a supportive environment for developing computer, technical and professional skills.
+
+Our focus is not only on teaching concepts but also on helping students understand how those concepts can be applied in practical situations.
+
+Our Approach
+01
+Learn
+
+Understand the fundamentals through structured teaching.
+
+02
+Practice
+
+Apply concepts through practical exercises and activities.
+
+03
+Improve
+
+Receive guidance and feedback from experienced faculty.
+
+04
+Grow
+
+Develop skills that support academic and career goals.
+4. Courses Section
+
+Instead of hard-coding courses, store them in Supabase so the administrator can add/edit them.
+
+Course Card
+[Course Icon]
+
+Computer Courses
+
+Build essential computer knowledge and practical digital skills.
+
+Duration
+Flexible
+
+Level
+Beginner → Advanced
+
+View Course →
+
+Possible course categories based on the information you provided:
+
+Computer Courses
+Basic Computer Training
+MS Office
+Internet & Digital Skills
+Computer Applications
+Programming Fundamentals
+Typing Courses
+English Typing
+Tamil Typing
+Typing Practice
+Speed Development
+Technical Courses
+Technical Fundamentals
+Practical Computer Training
+Career-Oriented Technical Skills
+
+Important: These should be treated as editable sample categories until you provide MAX's actual course list.
+
+5. Why Choose MAX
+Why Students Choose MAX
+Experienced Faculty
+
+Learn from knowledgeable and supportive teaching staff.
+
+Structured Learning
+
+Follow an organized learning process designed around student development.
+
+Practical Training
+
+Gain experience through exercises and practical activities.
+
+Student Support
+
+Receive guidance throughout your learning journey.
+
+Career Orientation
+
+Develop skills that can support future academic and professional opportunities.
+
+Supportive Environment
+
+Learn in an environment designed to encourage participation and improvement.
+
+6. Statistics Section
+
+A premium horizontal statistics section:
+
+4.9
+Google Rating
+
+110+
+Reviews
+
+Experienced
+Faculty
+
+Practical
+Learning
+
+The 4.9 / 110 reviews should be displayed as Google profile information supplied by you, rather than pretending the website independently verified it.
+
+7. Faculty Section
+
+Create dynamic faculty profiles.
+
+Faculty Card
+[Faculty Photo]
+
+Faculty Name
+
+Subject / Specialization
+
+Experience
+
+[View Profile]
+
+Supabase fields:
+
+id
+name
+designation
+specialization
+experience
+photo_url
+description
+display_order
+is_active
+8. Gallery
+
+Use a clean masonry-style gallery.
+
+Categories:
+
+All
+Institute
+Classroom
+Students
+Activities
+Events
+
+Images can be uploaded through the Admin Panel and stored in:
+
+Supabase Storage
+      ↓
+gallery bucket
+
+Each gallery record:
+
+id
+title
+description
+image_url
+category
+display_order
+is_featured
+created_at
+9. Reviews
+What Our Students Say
+
+Use a clean testimonial design instead of oversized stars everywhere.
+
+Example:
+
+“Excellent institution with highly experienced and supportive faculty. It provides a structured learning environment with knowledgeable teachers.”
+
+Keerthana Keerthi
+
+“Excellent institution. The Institute provides a structured learning environment with knowledgeable teachers.”
+
+Jenisha
+
+“Very good teaching staffs and Institute management also very good.”
+
+Haneesha Haneesha
+
+Your existing review can also be displayed:
+
+“Good teachings and well trained staffs.”
+
+Karthik T.S.
+
+10. FAQ
+Frequently Asked Questions
+
+What courses are available at MAX?
+
+MAX offers computer, typing and technical training programs. The complete course list can be viewed on the Courses page.
+
+How can I enquire about a course?
+
+Use the enquiry form or contact MAX directly by phone.
+
+Where is MAX Educational Institution located?
+
+MAX Educational Institution is located at Azhagiyamandapam, Mulagamooddu, Tamil Nadu.
+
+Can I visit the institute before joining?
+
+Students can contact the institute to enquire about visiting and course details.
+
+11. Contact Section
+Start Your Learning Journey
+
+Have questions about courses, timings or admissions?
+
+Send us an enquiry and our team can get back to you.
+
+Contact Information
+
+MAX Educational Institution
+
+1st Floor, Trivandrum–Nagercoil Highway,
+Opposite Mosque, Near Nagercoil Bus Stop,
+Junction, Azhagiyamandapam,
+Mulagamooddu, Tamil Nadu – 629167
+
+Phone
+
+063809 27568
+
+Hours
+
+Open until 6:00 PM
+
+Enquiry Form
+Full Name
+Phone Number
+Email Address
+Select Course
+Message
+
+[Send Enquiry]
+
+Store submissions directly in Supabase.
+
+12. Supabase Database
+
+Create these tables:
+
+profiles
+courses
+faculty
+gallery
+reviews
+enquiries
+faq
+site_settings
+courses
+id
+title
+slug
+short_description
+description
+category
+duration
+level
+icon
+image_url
+display_order
+is_active
+created_at
+updated_at
+enquiries
+id
+name
+phone
+email
+course_id
+message
+status
+created_at
+
+Status:
+
+New
+Contacted
+In Progress
+Closed
+reviews
+id
+student_name
+review
+rating
+photo_url
+is_featured
+created_at
+site_settings
+id
+institute_name
+tagline
+phone
+email
+address
+opening_time
+closing_time
+google_maps_url
+logo_url
+
+This allows you to change institute information from the Admin Panel without editing React code.
+
+13. Admin Dashboard
+
+This is where the project becomes a proper full-stack application.
+
+Admin Login
+MAX ADMIN
+
+Email
+Password
+
+[Sign In]
+
+Use:
+
+Supabase Authentication
+
+Do not create a plain-text password system inside React.
+
+Admin Dashboard
+MAX ADMINISTRATION
+
+Dashboard
+────────────────
+Overview
+
+Courses
+Faculty
+Gallery
+Reviews
+Enquiries
+FAQ
+Site Settings
+
+Logout
+
+Dashboard cards:
+
+Total Courses       12
+Faculty              8
+Gallery Images      36
+New Enquiries        7
+14. Enquiry Management
+
+Admin sees:
+
+Name          Course       Phone        Status
+------------------------------------------------
+Arun          Computer     987xxxxxxx   New
+Priya         Typing       987xxxxxxx   Contacted
+Rahul         Technical    987xxxxxxx   Closed
+
+Actions:
+
+View
+Change Status
+Delete
+15. Premium UI/UX
+
+I recommend this visual direction:
+
+Color system
+Primary      #123B5D
+Secondary    #1D6A8A
+Accent       #E5A83B
+Background   #F7F9FB
+Surface      #FFFFFF
+Text         #17212B
+Muted        #687582
+Border       #E4E9EE
+
+Use the accent color sparingly.
+
+Typography
+
+Plus Jakarta Sans
+
+Use:
+
+Heading       700
+Subheading    600
+Body          400
+Buttons       600
+16. Navigation
+
+Desktop:
+
+MAX
+Educational Institution
+
+Home
+About
+Courses
+Faculty
+Gallery
+Reviews
+Contact
+
+[Enquire Now]
+
+Mobile:
+
+MAX
+Educational Institution
+
+☰
+
+The menu icon should be a Lucide SVG, not an emoji.
+
+17. Footer
+MAX Educational Institution
+
+Empowering students with knowledge,
+practical skills and career-focused learning.
+
+Quick Links
+Home
+About
+Courses
+Gallery
+Contact
+
+Contact
+063809 27568
+
+Azhagiyamandapam,
+Mulagamooddu, Tamil Nadu
+
+────────────────────────────
+
+© 2026 MAX Educational Institution
+All rights reserved.
+18. React Project Structure
+
+Use a clean structure:
+
+max-educational/
+│
+├── src/
+│   ├── components/
+│   │   ├── Navbar.jsx
+│   │   ├── Footer.jsx
+│   │   ├── Button.jsx
+│   │   ├── CourseCard.jsx
+│   │   ├── FacultyCard.jsx
+│   │   ├── ReviewCard.jsx
+│   │   ├── GalleryCard.jsx
+│   │   └── SectionTitle.jsx
+│   │
+│   ├── pages/
+│   │   ├── Home.jsx
+│   │   ├── About.jsx
+│   │   ├── Courses.jsx
+│   │   ├── Faculty.jsx
+│   │   ├── Gallery.jsx
+│   │   ├── Reviews.jsx
+│   │   ├── Contact.jsx
+│   │   └── FAQ.jsx
+│   │
+│   ├── admin/
+│   │   ├── AdminLogin.jsx
+│   │   ├── AdminDashboard.jsx
+│   │   ├── ManageCourses.jsx
+│   │   ├── ManageFaculty.jsx
+│   │   ├── ManageGallery.jsx
+│   │   ├── ManageReviews.jsx
+│   │   ├── ManageEnquiries.jsx
+│   │   └── Settings.jsx
+│   │
+│   ├── lib/
+│   │   └── supabase.js
+│   │
+│   ├── hooks/
+│   │   ├── useCourses.js
+│   │   ├── useFaculty.js
+│   │   └── useGallery.js
+│   │
+│   ├── App.jsx
+│   ├── main.jsx
+│   └── index.css
+│
+├── public/
+│   └── favicon.svg
+│
+├── .env
+├── package.json
+└── README.md
+19. Supabase Architecture
+                    MAX WEBSITE
+                         │
+                         ▼
+                 React Frontend
+                         │
+             ┌───────────┴───────────┐
+             ▼                       ▼
+       Supabase Auth            Supabase API
+                                     │
+                         ┌───────────┼───────────┐
+                         ▼           ▼           ▼
+                      PostgreSQL   Storage     Security
+                         │           │           │
+                    Courses       Images       RLS
+                    Faculty
+                    Reviews
+                    Enquiries
+                    FAQ
+Security
+
+Enable Row Level Security (RLS).
+
+Public users:
+
+READ
+Courses
+Faculty
+Gallery
+Reviews
+FAQ
+
+Public users:
+
+INSERT
+Enquiries
+
+Admin:
+
+READ
+INSERT
+UPDATE
+DELETE
+
+This is important. Never put a Supabase service-role key in the React frontend.
+
+20. Homepage UX Flow
+Landing
+   ↓
+Hero
+   ↓
+Why MAX
+   ↓
+Courses
+   ↓
+Learning Process
+   ↓
+Faculty
+   ↓
+Gallery
+   ↓
+Student Reviews
+   ↓
+FAQ
+   ↓
+Contact / Enquiry
+   ↓
+Footer
+
+The website should feel like a professional educational institution, not a generic template.
+
+21. Antigravity Build Prompt
+
+You can give the following as the main project instruction to your coding environment:
+
+MAX Educational Institution — Full-Stack Build Specification
+
+Build a production-quality full-stack website for MAX Educational Institution, located at:
+
+1st Floor, Trivandrum–Nagercoil Highway, opposite Mosque, near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu 629167.
+
+Phone: 063809 27568.
+
+Use:
+
+React
+Vite
+Tailwind CSS
+React Router
+Lucide React icons
+Supabase
+Supabase PostgreSQL
+Supabase Authentication
+Supabase Storage
+
+Do NOT build this as a static HTML website.
+
+The application must have two major areas:
+
+Public institutional website
+Protected admin dashboard
+
+PUBLIC WEBSITE:
+
+Create these pages:
+
+Home
+About
+Courses
+Faculty
+Gallery
+Reviews
+FAQ
+Contact
+
+HOME:
+
+Create a premium modern hero section with:
+
+MAX Educational Institution
+
+"Empowering Students With Skills for Tomorrow"
+
+Supporting text explaining that MAX provides structured learning, practical training, experienced faculty and career-focused education.
+
+Add CTA buttons:
+
+"Explore Courses"
+"Contact MAX"
+
+Create sections for:
+
+Why MAX
+Courses
+Learning Process
+Faculty
+Gallery
+Reviews
+FAQ
+Contact
+
+Do not use random emojis anywhere.
+
+Use Lucide React SVG icons consistently. Icons must have transparent backgrounds and should visually integrate with the page.
+
+ABOUT:
+
+Explain MAX as a structured learning environment focused on knowledge, practical skills and student development.
+
+Include:
+
+Experienced Faculty
+Structured Learning
+Practical Training
+Student Support
+Career Orientation
+Supportive Environment
+
+COURSES:
+
+Courses must be loaded dynamically from Supabase.
+
+Each course card should contain:
+
+Icon
+Course title
+Short description
+Category
+Duration
+Level
+View Details button
+
+Do not invent official courses. Seed only clearly marked sample categories/data where necessary and make them editable from the admin panel.
+
+FACULTY:
+
+Load faculty profiles dynamically from Supabase.
+
+Each profile should include:
+
+Photo
+Name
+Designation
+Specialization
+Experience
+Description
+
+GALLERY:
+
+Load gallery images from Supabase Storage.
+
+Include filtering:
+
+All
+Institute
+Classroom
+Students
+Activities
+Events
+
+REVIEWS:
+
+Create a professional testimonial section.
+
+Use the provided reviews as initial seed data, but make the entire review system editable through the admin panel.
+
+Display:
+
+Student name
+Review
+Rating
+Optional profile photo
+
+FAQ:
+
+Create an accordion FAQ section with questions about courses, admission enquiry, location and institute information.
+
+CONTACT:
+
+Display:
+
+MAX Educational Institution
+
+1st Floor, Trivandrum–Nagercoil Highway,
+Opposite Mosque, Near Nagercoil Bus Stop,
+Junction, Azhagiyamandapam,
+Mulagamooddu, Tamil Nadu 629167.
+
+Phone:
+063809 27568
+
+Create an enquiry form:
+
+Full Name
+Phone Number
+Email
+Course
+Message
+
+Save enquiries to Supabase.
+
+ADMIN:
+
+Create a protected admin authentication system using Supabase Auth.
+
+Admin pages:
+
+Dashboard
+Courses
+Faculty
+Gallery
+Reviews
+Enquiries
+FAQ
+Site Settings
+
+Dashboard should show:
+
+Total Courses
+Total Faculty
+Gallery Images
+New Enquiries
+
+COURSE MANAGEMENT:
+
+Admin can:
+
+Add course
+Edit course
+Delete course
+Activate/deactivate course
+Change display order
+Upload course image
+Select Lucide icon
+
+FACULTY MANAGEMENT:
+
+Admin can:
+
+Add faculty
+Edit faculty
+Delete faculty
+Upload faculty photo
+Activate/deactivate faculty
+Change display order
+
+GALLERY MANAGEMENT:
+
+Admin can:
+
+Upload image
+Add title
+Add category
+Delete image
+Change display order
+Mark featured
+
+Store images using Supabase Storage.
+
+REVIEW MANAGEMENT:
+
+Admin can:
+
+Add review
+Edit review
+Delete review
+Set rating
+Upload optional profile image
+Mark featured
+
+ENQUIRY MANAGEMENT:
+
+Display enquiries in a table.
+
+Columns:
+
+Name
+Phone
+Email
+Course
+Date
+Status
+
+Statuses:
+
+New
+Contacted
+In Progress
+Closed
+
+Allow admin to update enquiry status.
+
+DATABASE:
+
+Create Supabase tables:
+
+profiles
+courses
+faculty
+gallery
+reviews
+enquiries
+faq
+site_settings
+
+Add appropriate primary keys, timestamps, foreign keys and indexes.
+
+SECURITY:
+
+Use Supabase Row Level Security.
+
+Public users can read published/active:
+
+Courses
+Faculty
+Gallery
+Reviews
+FAQ
+
+Public users can create enquiries.
+
+Only authenticated admins can create, update or delete management data.
+
+Never expose the Supabase service-role key in frontend code.
+
+Use environment variables:
+
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+
+DESIGN:
+
+Create a premium educational institution UI.
+
+Color system:
+
+Primary: #123B5D
+Secondary: #1D6A8A
+Accent: #E5A83B
+Background: #F7F9FB
+Surface: #FFFFFF
+Text: #17212B
+Muted: #687582
+Border: #E4E9EE
+
+Use a clean modern typography system such as Inter or Plus Jakarta Sans.
+
+Use:
+
+Large clean headings
+Generous whitespace
+Rounded cards
+Subtle borders
+Soft shadows
+Smooth hover states
+Consistent spacing
+Responsive grids
+Accessible contrast
+Keyboard-friendly controls
+Mobile-first responsive design
+
+Do not overuse gradients, glassmorphism or animations.
+
+Animations should be subtle and purposeful.
+
+NAVBAR:
+
+Desktop:
+
+MAX
+Educational Institution
+
+Home
+About
+Courses
+Faculty
+Gallery
+Reviews
+Contact
+
+CTA:
+Enquire Now
+
+Mobile navigation should use a Lucide Menu icon and Lucide X icon.
+
+FOOTER:
+
+MAX Educational Institution
+
+Short description
+
+Quick Links
+
+Contact details
+
+Phone
+
+Address
+
+Copyright 2026 MAX Educational Institution.
+
+RESPONSIVENESS:
+
+The website must work correctly on:
+
+Mobile phones
+Tablets
+Laptops
+Large desktop screens
+
+ADMIN UI:
+
+Use a separate professional dashboard layout with:
+
+Sidebar
+Top navigation
+Breadcrumbs
+Search
+Tables
+Cards
+Modal forms
+Confirmation dialogs
+Toast notifications
+Loading states
+Empty states
+Error states
+
+UX REQUIREMENTS:
+
+Every async operation must have:
+
+Loading state
+Success feedback
+Error feedback
+
+Forms must include:
+
+Validation
+Required fields
+Clear error messages
+Disabled submit state while saving
+
+Avoid unnecessary popups.
+
+SEO:
+
+Add proper:
+
+Page titles
+Meta descriptions
+Open Graph metadata
+Semantic HTML
+Image alt text
+
+PERFORMANCE:
+
+Lazy load gallery images
+Optimize image rendering
+Avoid unnecessary React re-renders
+Use reusable components
+Keep database queries efficient
+
+CODE QUALITY:
+
+Use reusable components and clean separation of concerns.
+
+Do not put all code inside App.jsx.
+
+Create a maintainable folder structure.
+
+Before finishing:
+
+Verify all routes.
+Verify Supabase connection.
+Verify authentication.
+Verify RLS policies.
+Verify CRUD operations.
+Verify image upload.
+Verify enquiry submission.
+Verify responsive layout.
+Verify no broken icons.
+Verify there are no random emojis.
+Verify there are no hard-coded fake database values presented as official information.
+Provide setup instructions in README.md.
+
+The final result should feel like a real professional educational institution platform rather than a generic AI-generated template.
+
+One important point
+
+For the actual MAX website, I would keep the information you supplied as verified institution information and make things like the exact course names, faculty names, email address, timings, logo and official social-media links editable through Supabase rather than inventing them. That will make the site much more trustworthy and easier for you to maintain.
