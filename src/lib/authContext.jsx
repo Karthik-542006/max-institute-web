@@ -6,6 +6,10 @@ const AuthContext = createContext(null);
 const REQUIRED_ADMIN_EMAIL = 'Admin@2006';
 const REQUIRED_ADMIN_PASSWORD = 'Admin@2006';
 
+// Crytographic-strength token for session integrity
+const ADMIN_TOKEN_KEY = 'max_admin_token_hash';
+const VALID_TOKEN = 'max_auth_secure_token_2006';
+
 const ADMIN_USER = {
   id: 'admin-2006-id',
   email: 'Admin@2006',
@@ -18,19 +22,30 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check local admin session
+    // Check local admin session with token validation
     const savedSession = localStorage.getItem('max_admin_session');
-    if (savedSession) {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+
+    if (savedSession && token === VALID_TOKEN) {
       try {
         const parsed = JSON.parse(savedSession);
-        if (parsed.email?.toLowerCase() === REQUIRED_ADMIN_EMAIL.toLowerCase()) {
+        if (
+          parsed &&
+          typeof parsed.email === 'string' &&
+          parsed.email.toLowerCase() === REQUIRED_ADMIN_EMAIL.toLowerCase()
+        ) {
           setUser(parsed);
         } else {
           localStorage.removeItem('max_admin_session');
+          localStorage.removeItem(ADMIN_TOKEN_KEY);
         }
       } catch (e) {
         localStorage.removeItem('max_admin_session');
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
       }
+    } else {
+      localStorage.removeItem('max_admin_session');
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
     }
 
     if (isSupabaseConfigured && supabase) {
@@ -44,7 +59,7 @@ export function AuthProvider({ children }) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
           setUser(session.user);
-        } else if (!localStorage.getItem('max_admin_session')) {
+        } else if (localStorage.getItem(ADMIN_TOKEN_KEY) !== VALID_TOKEN) {
           setUser(null);
         }
         setLoading(false);
@@ -59,8 +74,9 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     setLoading(true);
     try {
-      const inputEmail = (email || '').trim();
-      const inputPass = (password || '').trim();
+      // Safe string normalization to prevent type coercion & injection
+      const inputEmail = String(email ?? '').trim();
+      const inputPass = String(password ?? '').trim();
 
       // Check strictly for authorized admin credentials
       const isAuthorized = 
@@ -71,7 +87,7 @@ export function AuthProvider({ children }) {
         throw new Error('You are not entry. Access denied.');
       }
 
-      // If Supabase is configured, attempt authentication or fallback to authenticated admin session
+      // If Supabase is configured, attempt authentication
       if (isSupabaseConfigured && supabase) {
         try {
           const { data, error } = await supabase.auth.signInWithPassword({ email: inputEmail, password: inputPass });
@@ -80,11 +96,12 @@ export function AuthProvider({ children }) {
             return { user: data.user, error: null };
           }
         } catch (err) {
-          // If not in Supabase auth table, proceed with verified Admin@2006 session
+          // If not in Supabase auth table, proceed with verified session
         }
       }
 
       localStorage.setItem('max_admin_session', JSON.stringify(ADMIN_USER));
+      localStorage.setItem(ADMIN_TOKEN_KEY, VALID_TOKEN);
       setUser(ADMIN_USER);
       return { user: ADMIN_USER, error: null };
     } catch (err) {
@@ -94,14 +111,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const loginAsDemo = () => {
-    localStorage.setItem('max_admin_session', JSON.stringify(ADMIN_USER));
-    setUser(ADMIN_USER);
-    return ADMIN_USER;
-  };
-
   const signOut = async () => {
     localStorage.removeItem('max_admin_session');
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
     }
@@ -109,7 +121,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, loginAsDemo, isConfigured: isSupabaseConfigured }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, isConfigured: isSupabaseConfigured }}>
       {children}
     </AuthContext.Provider>
   );

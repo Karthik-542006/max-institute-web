@@ -4,10 +4,7 @@ import {
   GraduationCap, 
   Lock, 
   Mail, 
-  ArrowRight, 
-  AlertCircle, 
-  ShieldCheck,
-  CheckCircle2
+  AlertCircle 
 } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import Button from '../components/Button';
@@ -17,7 +14,7 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, loginAsDemo, isConfigured } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -29,15 +26,10 @@ export default function AdminLogin() {
     setLoading(false);
 
     if (err) {
-      setError(err.message || 'Failed to authenticate. Check email and password.');
+      setError(err.message || 'You are not entry. Access denied.');
     } else if (user) {
       navigate('/admin');
     }
-  };
-
-  const handleDemoLogin = () => {
-    loginAsDemo();
-    navigate('/admin');
   };
 
   return (
@@ -72,7 +64,7 @@ export default function AdminLogin() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-brand-text uppercase tracking-wide mb-1.5">
-                Admin Username / ID
+                Admin Username / Email
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -81,7 +73,8 @@ export default function AdminLogin() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Admin@2006"
+                  placeholder="Enter administrator ID"
+                  autoComplete="username"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 />
               </div>
@@ -98,7 +91,8 @@ export default function AdminLogin() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Admin@2006"
+                  placeholder="••••••••••••"
+                  autoComplete="current-password"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 />
               </div>
@@ -116,23 +110,6 @@ export default function AdminLogin() {
               </Button>
             </div>
           </form>
-
-          {/* Fill Official Credentials Button */}
-          <div className="mt-8 pt-6 border-t border-brand-border/70 text-center">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              icon={ShieldCheck}
-              onClick={() => {
-                setEmail('Admin@2006');
-                setPassword('Admin@2006');
-              }}
-              className="w-full bg-blue-50/50 hover:bg-blue-100/50 text-brand-primary border-blue-200 text-xs"
-            >
-              Fill Official Admin Credentials (Admin@2006)
-            </Button>
-          </div>
 
           <div className="mt-6 text-center">
             <Link to="/" className="text-xs text-brand-secondary hover:text-brand-primary font-semibold">
