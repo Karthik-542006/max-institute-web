@@ -7,7 +7,7 @@
 ## Verified Institution Information
 
 - **Institute Name**: MAX Educational Institution
-- **Campus Address**: 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167
+- **Campus Address**: 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167
 - **Phone**: 063809 27568
 - **Operational Hours**: Monday to Saturday, open until 06:00 PM
 - **Google Reviews Profile**: Rated **4.9 / 5.0** based on 110+ verified student reviews
