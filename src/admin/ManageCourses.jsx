@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BookOpen, 
   Plus, 
@@ -11,9 +11,13 @@ import {
   GraduationCap, 
   Award, 
   Settings as SettingsIcon, 
-  Users 
+  Users,
+  Upload,
+  Link,
+  Image as ImageIcon
 } from 'lucide-react';
 import { dataService } from '../lib/dataService';
+import { uploadImage, getImagePreview, MAX_FILE_SIZE } from '../lib/imageUpload';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import Toast, { useToast } from '../components/Toast';
@@ -39,6 +43,12 @@ export default function ManageCourses() {
     display_order: 1,
     is_active: true
   });
+  const [imagePreview, setImagePreview] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const pendingFileRef = useRef(null);
+  const fileInputRef = useRef(null);
+
   const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
@@ -51,6 +61,25 @@ export default function ManageCourses() {
     setCourses(data);
     setLoading(false);
   }
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessing(true);
+    try {
+      if (!file.type.startsWith('image/')) throw new Error('Please select a valid image file');
+      if (file.size > MAX_FILE_SIZE) throw new Error('Image is too large. Maximum size is 5 MB.');
+      const preview = await getImagePreview(file);
+      pendingFileRef.current = file;
+      setImagePreview(preview);
+      setForm((prev) => ({ ...prev, image_url: '__pending_upload__' }));
+      showToast('Course image selected', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const openAddModal = () => {
     setEditingCourse(null);
@@ -67,11 +96,14 @@ export default function ManageCourses() {
       display_order: courses.length + 1,
       is_active: true
     });
+    setImagePreview('https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&auto=format&fit=crop&q=80');
+    pendingFileRef.current = null;
     setIsModalOpen(true);
   };
 
   const openEditModal = (course) => {
     setEditingCourse(course);
+    const imgUrl = course.image_url || 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&auto=format&fit=crop&q=80';
     setForm({
       title: course.title,
       slug: course.slug || course.title.toLowerCase().replace(/\s+/g, '-'),
@@ -81,10 +113,12 @@ export default function ManageCourses() {
       duration: course.duration,
       level: course.level,
       icon: course.icon || 'Monitor',
-      image_url: course.image_url || '',
+      image_url: imgUrl,
       display_order: course.display_order || 1,
       is_active: course.is_active ?? true
     });
+    setImagePreview(imgUrl);
+    pendingFileRef.current = null;
     setIsModalOpen(true);
   };
 
@@ -95,21 +129,35 @@ export default function ManageCourses() {
       return;
     }
 
-    const payload = {
-      ...form,
-      slug: form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    };
+    setIsUploading(true);
+    try {
+      let finalForm = { ...form };
+      if (pendingFileRef.current) {
+        const { url } = await uploadImage(pendingFileRef.current, 'courses');
+        finalForm.image_url = url;
+      }
 
-    if (editingCourse) {
-      await dataService.updateCourse(editingCourse.id, payload);
-      showToast('Course updated successfully', 'success');
-    } else {
-      await dataService.addCourse(payload);
-      showToast('New course added successfully', 'success');
+      const payload = {
+        ...finalForm,
+        slug: finalForm.slug || finalForm.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      };
+
+      if (editingCourse) {
+        await dataService.updateCourse(editingCourse.id, payload);
+        showToast('Course updated successfully', 'success');
+      } else {
+        await dataService.addCourse(payload);
+        showToast('New course added successfully', 'success');
+      }
+
+      setIsModalOpen(false);
+      loadCourses();
+    } catch (err) {
+      console.error('Course submit error:', err);
+      showToast('Failed to save course. Please try again.', 'error');
+    } finally {
+      setIsUploading(false);
     }
-
-    setIsModalOpen(false);
-    loadCourses();
   };
 
   const handleDelete = async (id, title) => {
@@ -308,6 +356,53 @@ export default function ManageCourses() {
             />
           </div>
 
+          <div>
+            <label className="block text-xs font-bold text-brand-text mb-1 uppercase tracking-wide">
+              Course Cover Image
+            </label>
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-3 rounded-2xl bg-brand-bg border border-brand-border">
+              {imagePreview && (
+                <div className="w-24 h-16 rounded-xl overflow-hidden bg-black/5 shrink-0 border border-brand-border">
+                  <img src={imagePreview} alt="Course cover" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="flex-1 w-full space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*"
+                    className="hidden"
+                    id="course-image-upload"
+                  />
+                  <label
+                    htmlFor="course-image-upload"
+                    className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-brand-primary border border-brand-border hover:bg-gray-50 transition-colors shadow-xs"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-brand-secondary" />
+                    <span>Upload Image File</span>
+                  </label>
+                  {isProcessing && <span className="text-xs text-brand-muted italic">Processing...</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <input
+                    type="url"
+                    value={form.image_url === '__pending_upload__' ? '' : form.image_url}
+                    onChange={(e) => {
+                      setForm({ ...form, image_url: e.target.value });
+                      setImagePreview(e.target.value);
+                      pendingFileRef.current = null;
+                    }}
+                    placeholder="Or paste image URL (https://...)"
+                    className="w-full px-3 py-1 rounded-lg border border-brand-border text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 pt-2">
             <input
               type="checkbox"
@@ -325,7 +420,7 @@ export default function ManageCourses() {
             <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="sm">
+            <Button type="submit" variant="primary" size="sm" loading={isUploading}>
               {editingCourse ? 'Save Changes' : 'Create Course'}
             </Button>
           </div>

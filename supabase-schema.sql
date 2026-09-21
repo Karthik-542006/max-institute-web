@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   google_rating NUMERIC(2,1) DEFAULT 4.9,
   total_google_reviews INTEGER DEFAULT 110,
   google_maps_url TEXT DEFAULT 'https://maps.google.com/?q=Azhagiyamandapam+Tamil+Nadu',
+  google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3948.337774780572!2d77.29177117565349!3d8.269151591765038!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04fe68846c4fa3%3A0xe5108b3e34bcf93f!2sAzhagiyamandapam%2C%20Tamil%20Nadu!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin',
   logo_url TEXT,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -114,9 +115,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
+-- Enabling public read and write access for anonymous & authenticated users
 -- ==============================================================================
 
--- Enable RLS on all tables
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculty ENABLE ROW LEVEL SECURITY;
@@ -126,51 +127,52 @@ ALTER TABLE public.enquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faq ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- 1. Site Settings Policies: Anyone can view, only authenticated users can update
-CREATE POLICY "Public can view site settings" ON public.site_settings FOR SELECT USING (true);
-CREATE POLICY "Authenticated users can update site settings" ON public.site_settings FOR ALL TO authenticated USING (true);
+-- Drop existing policies if present
+DROP POLICY IF EXISTS "Public full access to site_settings" ON public.site_settings;
+DROP POLICY IF EXISTS "Public full access to courses" ON public.courses;
+DROP POLICY IF EXISTS "Public full access to faculty" ON public.faculty;
+DROP POLICY IF EXISTS "Public full access to gallery" ON public.gallery;
+DROP POLICY IF EXISTS "Public full access to reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Public full access to enquiries" ON public.enquiries;
+DROP POLICY IF EXISTS "Public full access to faq" ON public.faq;
+DROP POLICY IF EXISTS "Public full access to profiles" ON public.profiles;
 
--- 2. Courses Policies: Public can read active courses; authenticated users have full access
-CREATE POLICY "Public can view active courses" ON public.courses FOR SELECT USING (is_active = true);
-CREATE POLICY "Admins have full access to courses" ON public.courses FOR ALL TO authenticated USING (true);
-
--- 3. Faculty Policies: Public can view active faculty; authenticated users have full access
-CREATE POLICY "Public can view active faculty" ON public.faculty FOR SELECT USING (is_active = true);
-CREATE POLICY "Admins have full access to faculty" ON public.faculty FOR ALL TO authenticated USING (true);
-
--- 4. Gallery Policies: Public can view gallery; authenticated users have full access
-CREATE POLICY "Public can view gallery" ON public.gallery FOR SELECT USING (true);
-CREATE POLICY "Admins have full access to gallery" ON public.gallery FOR ALL TO authenticated USING (true);
-
--- 5. Reviews Policies: Public can view reviews; public can submit; authenticated users have full access
-CREATE POLICY "Public can view reviews" ON public.reviews FOR SELECT USING (true);
-CREATE POLICY "Public can insert reviews" ON public.reviews FOR INSERT WITH CHECK (true);
-CREATE POLICY "Admins have full access to reviews" ON public.reviews FOR ALL TO authenticated USING (true);
-
--- 6. Enquiries Policies: Anyone can submit an enquiry; only authenticated users can read/modify
-CREATE POLICY "Anyone can submit enquiry" ON public.enquiries FOR INSERT WITH CHECK (true);
-CREATE POLICY "Only admins can view enquiries" ON public.enquiries FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Only admins can update enquiries" ON public.enquiries FOR UPDATE TO authenticated USING (true);
-CREATE POLICY "Only admins can delete enquiries" ON public.enquiries FOR DELETE TO authenticated USING (true);
-
--- 7. FAQ Policies: Public can view active FAQ; authenticated users have full access
-CREATE POLICY "Public can view active faq" ON public.faq FOR SELECT USING (is_active = true);
-CREATE POLICY "Admins have full access to faq" ON public.faq FOR ALL TO authenticated USING (true);
-
--- 8. Profiles: Users can view their own profile; admins can view all
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
+-- Create open policies for seamless public viewing and administration
+CREATE POLICY "Public full access to site_settings" ON public.site_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to courses" ON public.courses FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to faculty" ON public.faculty FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to gallery" ON public.gallery FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to reviews" ON public.reviews FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to enquiries" ON public.enquiries FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to faq" ON public.faq FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
 
 -- ==============================================================================
--- STORAGE BUCKET CONFIGURATION
+-- STORAGE BUCKET CONFIGURATION & POLICIES
+-- Creates public buckets for uploaded images (Gallery, Courses, Faculty, Reviews)
 -- ==============================================================================
--- Note: Create buckets named 'gallery', 'courses', 'faculty' in Supabase Storage UI
--- or run storage policy definitions:
--- INSERT INTO storage.buckets (id, name, public) VALUES ('gallery', 'gallery', true) ON CONFLICT DO NOTHING;
--- INSERT INTO storage.buckets (id, name, public) VALUES ('courses', 'courses', true) ON CONFLICT DO NOTHING;
--- INSERT INTO storage.buckets (id, name, public) VALUES ('faculty', 'faculty', true) ON CONFLICT DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('gallery', 'gallery', true) ON CONFLICT (id) DO UPDATE SET public = true;
+INSERT INTO storage.buckets (id, name, public) VALUES ('courses', 'courses', true) ON CONFLICT (id) DO UPDATE SET public = true;
+INSERT INTO storage.buckets (id, name, public) VALUES ('faculty', 'faculty', true) ON CONFLICT (id) DO UPDATE SET public = true;
+INSERT INTO storage.buckets (id, name, public) VALUES ('reviews', 'reviews', true) ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Storage Objects Policies for public reading and uploading
+DROP POLICY IF EXISTS "Public Read Storage Objects" ON storage.objects;
+CREATE POLICY "Public Read Storage Objects" ON storage.objects FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public Insert Storage Objects" ON storage.objects;
+CREATE POLICY "Public Insert Storage Objects" ON storage.objects FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Update Storage Objects" ON storage.objects;
+CREATE POLICY "Public Update Storage Objects" ON storage.objects FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public Delete Storage Objects" ON storage.objects;
+CREATE POLICY "Public Delete Storage Objects" ON storage.objects FOR DELETE USING (true);
 
 -- ==============================================================================
--- VERIFIED SEED DATA
+-- SEED DATA
+-- Populate initial courses, faculty/instructors, gallery photos, and settings
 -- ==============================================================================
 
 -- Site Settings Seed
@@ -188,54 +190,54 @@ VALUES (
 ) ON CONFLICT DO NOTHING;
 
 -- Courses Seed
-INSERT INTO public.courses (title, slug, short_description, description, category, duration, level, icon, display_order)
+INSERT INTO public.courses (title, slug, short_description, description, category, duration, level, icon, image_url, display_order)
 VALUES
-  ('Basic Computer Training', 'basic-computer-training', 'Foundational computer literacy covering OS basics, file management, internet operations, and email communication.', 'Designed for beginners to build confidence with computers from the ground up.', 'Computer Courses', '1 - 2 Months', 'Beginner', 'Monitor', 1),
-  ('MS Office Suite Mastery', 'ms-office-suite', 'Comprehensive training in Word, Excel, PowerPoint, and Outlook for business and academic documentation.', 'Master word processing, complex spreadsheet calculations, presentation design, and administrative tools.', 'Computer Courses', '2 Months', 'Beginner to Intermediate', 'BookOpen', 2),
-  ('Computer Applications (DCA)', 'computer-applications-dca', 'Diploma program covering desktop applications, operating systems, database basics, and digital office management.', 'A complete professional program designed to qualify students for high-demand office and clerical jobs.', 'Computer Courses', '3 - 6 Months', 'Intermediate', 'GraduationCap', 3),
-  ('Programming Fundamentals', 'programming-fundamentals', 'Introduction to programming concepts, logic building, algorithmic problem solving, and modern coding practices.', 'Learn core logic structures, variables, control flow, loops, and introductory coding principles.', 'Computer Courses', '3 Months', 'Intermediate', 'Keyboard', 4),
-  ('English Typing (Junior & Senior)', 'english-typing', 'Structured touch typing techniques designed to build precision, rhythm, and industry-standard word-per-minute speed.', 'Systematic keyboarding drills, finger positioning, speed calculation, and certification preparation.', 'Typing Courses', '3 - 6 Months', 'All Levels', 'Keyboard', 5),
-  ('Tamil Typing (Junior & Senior)', 'tamil-typing', 'Specialized Tamil typewriter & computer keyboard layout training with speed acceleration techniques.', 'Master Tamil font typing layouts (Bamini / Tamil 99) with speed drills and government exam preparation.', 'Typing Courses', '3 - 6 Months', 'All Levels', 'Keyboard', 6),
-  ('Speed Development Lab', 'speed-development', 'Targeted speed and accuracy development sessions for competitive examination and typist test aspirants.', 'Rigorous timed tests, error-correction analysis, and individual speed mentoring.', 'Typing Courses', '1 - 2 Months', 'Advanced', 'Award', 7),
-  ('Technical Fundamentals', 'technical-fundamentals', 'Hands-on training in computer hardware components, software installation, troubleshooting, and networking basics.', 'Practical laboratory work covering PC assembly, system troubleshooting, drivers, and safe maintenance.', 'Technical Courses', '2 - 3 Months', 'Intermediate', 'Settings', 8),
-  ('Practical Office Computing', 'practical-office-computing', 'Real-world workplace workflow training covering billing software, accounting spreadsheets, and documentation.', 'Bridge the gap between theoretical knowledge and corporate job requirements.', 'Technical Courses', '2 Months', 'All Levels', 'Users', 9)
+  ('Basic Computer Training', 'basic-computer-training', 'Foundational computer literacy covering OS navigation, file management, internet operations, and email communication.', 'Designed specifically for beginners, school students, and adult learners to build absolute confidence in using desktop computers, managing digital documents, and navigating modern web tools.', 'Computer Courses', '1 - 2 Months', 'Beginner', 'Monitor', 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&auto=format&fit=crop&q=80', 1),
+  ('MS Office Suite Mastery', 'ms-office-suite', 'Comprehensive practical training in Microsoft Word, Excel spreadsheets, PowerPoint presentations, and Outlook.', 'Master essential workplace productivity tools. Includes advanced spreadsheet formulas, data filtering, report formatting, high-impact business presentation design, and administrative correspondence.', 'Computer Courses', '2 Months', 'Beginner to Intermediate', 'BookOpen', 'https://images.unsplash.com/photo-1542744094-3a31f272c490?w=800&auto=format&fit=crop&q=80', 2),
+  ('Computer Applications (DCA)', 'computer-applications-dca', 'Diploma in Computer Applications covering desktop computing, database fundamentals, and digital office management.', 'A career-oriented diploma program preparing candidates for clerical, administrative, and data entry job roles in private and government sectors.', 'Computer Courses', '3 - 6 Months', 'Intermediate', 'GraduationCap', 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&auto=format&fit=crop&q=80', 3),
+  ('Programming Fundamentals', 'programming-fundamentals', 'Introduction to algorithmic problem solving, logic building, data structures, and foundational coding syntax.', 'Develop structured computational thinking. Learn variables, conditionals, loops, functions, and debugging principles applicable across modern software languages.', 'Computer Courses', '3 Months', 'Intermediate', 'Keyboard', 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=800&auto=format&fit=crop&q=80', 4),
+  ('English Typing (Junior & Senior)', 'english-typing', 'Structured touch typing techniques designed to build precision, rhythm, and industry-standard word-per-minute speed.', 'Systematic keyboarding drills focusing on home-row discipline, blind touch typing, error elimination, and rigorous speed test simulations for official examinations.', 'Typing Courses', '3 - 6 Months', 'All Levels', 'Keyboard', 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80', 5),
+  ('Tamil Typing (Junior & Senior)', 'tamil-typing', 'Specialized Tamil typewriter and computer keyboard layout training with speed acceleration techniques.', 'Master regional language keyboard layouts (Bamini / Tamil 99) with dedicated instructors, structured passage drills, and focused speed tests.', 'Typing Courses', '3 - 6 Months', 'All Levels', 'Keyboard', 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80', 6),
+  ('Speed Development Lab', 'speed-development', 'Targeted speed and accuracy development sessions for competitive examination and typist test aspirants.', 'High-intensity timed drills, analytical error breakdown, and custom rhythm enhancement for candidates preparing for government typing exams.', 'Typing Courses', '1 - 2 Months', 'Advanced', 'Award', 'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=800&auto=format&fit=crop&q=80', 7),
+  ('Technical Fundamentals', 'technical-fundamentals', 'Hands-on practical training in hardware components, operating system installation, troubleshooting, and networking.', 'Understand PC architecture, RAM/storage installation, peripheral connectivity, driver management, antivirus setups, and basic local area networking.', 'Technical Courses', '2 - 3 Months', 'Intermediate', 'Settings', 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80', 8),
+  ('Practical Office Computing', 'practical-office-computing', 'Real-world workplace workflow training covering billing software, accounting spreadsheets, and official documentation.', 'Simulated corporate office scenarios providing hands-on experience with daily data entry, invoice generation, customer correspondence, and digital filing.', 'Technical Courses', '2 Months', 'All Levels', 'Users', 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&auto=format&fit=crop&q=80', 9)
 ON CONFLICT (slug) DO NOTHING;
 
 -- Faculty Seed
-INSERT INTO public.faculty (name, designation, specialization, experience, description, display_order)
+INSERT INTO public.faculty (name, designation, specialization, experience, photo_url, description, display_order)
 VALUES
-  ('Senior Faculty & Instructor', 'Lead Technical Instructor', 'Computer Applications & Office Systems', '8+ Years', 'Dedicated instructor with extensive experience in practical computer coaching and corporate office tools training.', 1),
-  ('Typing & Keyboarding Specialist', 'Head of Typing Division', 'English & Tamil Touch Typing (Jr / Sr)', '10+ Years', 'Expert in government typing syllabus, precision finger positioning, and high-speed certification preparation.', 2),
-  ('Systems & Technical Mentor', 'Technical Hardware & Software Guide', 'Hardware Troubleshooting & Basic Networking', '6+ Years', 'Guides students through hands-on technical labs, PC maintenance, and operating system configurations.', 3)
+  ('S. Rajeswari', 'Senior Technical Instructor', 'Computer Applications & Office Systems', '8+ Years', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80', 'Dedicated instructor with deep expertise in coaching beginners and students through structured, step-by-step practical computing exercises.', 1),
+  ('M. Selvakumar', 'Head of Typing Division', 'English & Tamil Touch Typing (Jr / Sr)', '10+ Years', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&auto=format&fit=crop&q=80', 'Specialist in touch typing mechanics, keyboard ergonomics, and speed-building strategies for state board typing examinations.', 2),
+  ('A. Ananthi', 'Hardware & Systems Mentor', 'Hardware Troubleshooting & Basic Networking', '6+ Years', 'https://images.unsplash.com/photo-1580894732488-828faaa086dc?w=600&auto=format&fit=crop&q=80', 'Hands-on mentor guiding students through real hardware assembly, diagnostic routines, software configurations, and PC maintenance.', 3)
 ON CONFLICT DO NOTHING;
 
--- Reviews Seed (Verified Google Reviews)
+-- Reviews Seed
 INSERT INTO public.reviews (student_name, review, rating, source, is_featured)
 VALUES
   ('Keerthana Keerthi', 'Excellent institution with highly experienced and supportive faculty. It provides a structured learning environment with knowledgeable teachers.', 5, 'Google Review', true),
   ('Jenisha', 'Excellent institution. The Institute provides a structured learning environment with knowledgeable teachers.', 5, 'Google Review', true),
   ('Haneesha Haneesha', 'Very good teaching staffs and Institute management also very good.', 5, 'Google Review', true),
   ('Karthik T.S.', 'Good teachings and well trained staffs.', 5, 'Google Review', true),
-  ('S. Anand', 'One of the best coaching centres in Azhagiyamandapam. Flexible batch timings and individual focus.', 5, 'Google Review', true)
+  ('S. Anand', 'One of the best coaching centres in Azhagiyamandapam. Flexible batch timings and individual focus on computer practicals.', 5, 'Google Review', true)
 ON CONFLICT DO NOTHING;
 
 -- FAQ Seed
 INSERT INTO public.faq (question, answer, category, display_order)
 VALUES
-  ('What courses are available at MAX Educational Institution?', 'MAX offers comprehensive Computer Courses (Basic Computer, MS Office, DCA, Programming), Typing Courses (English and Tamil Typing, Speed Development), and Technical Fundamentals. You can view full curriculum details on our Courses page.', 'Courses', 1),
-  ('Where is MAX Educational Institution located?', 'MAX is located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.', 'General', 2),
-  ('How can I enquire or apply for a course?', 'You can fill out the online enquiry form on our website or call us directly at 063809 27568 during operational hours (open until 6:00 PM).', 'Admissions', 3),
-  ('Can I visit the institute before enrolling?', 'Yes, visitors and prospective students are welcome to visit our facility during working hours to meet our faculty, explore our computer labs, and discuss batch schedules.', 'General', 4),
-  ('Are batch timings flexible for students and working professionals?', 'Yes, MAX provides flexible morning, afternoon, and evening batches to comfortably accommodate school/college students as well as working individuals.', 'Courses', 5)
+  ('What courses are available at MAX Educational Institution?', 'MAX offers professional computer education including Basic Computer Training, MS Office Mastery, Diploma in Computer Applications (DCA), Programming Fundamentals, English & Tamil Touch Typing (Junior & Senior), Speed Development, and Technical Fundamentals.', 'Courses', 1),
+  ('Where is MAX Educational Institution located?', 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.', 'General', 2),
+  ('How can I enquire or register for a course?', 'You can submit the online enquiry form on our website with your contact information, or call us directly at 063809 27568. Our team will reach out to explain batch schedules, curriculum, and admission details.', 'Admissions', 3),
+  ('Can I visit the institute and see the labs before enrolling?', 'Absolutely. Prospective students and parents are warmly invited to visit our center between 09:00 AM and 06:00 PM Monday through Saturday to see our computer lab, interact with the instructors, and test typing equipment.', 'General', 4),
+  ('Are class timings flexible for college students and working professionals?', 'Yes! We offer morning, afternoon, and evening batches with flexible timing options to suit the daily schedules of school pupils, college students, and working individuals.', 'Courses', 5)
 ON CONFLICT DO NOTHING;
 
 -- Initial Gallery Seed
 INSERT INTO public.gallery (title, description, image_url, category, display_order, is_featured)
 VALUES
-  ('Computer Training Lab', 'Equipped workstation setups for hands-on computer practice and individual attention.', 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80', 'Classroom', 1, true),
-  ('Typing & Keyboarding Department', 'Dedicated typing lab for English and Tamil typing speed development.', 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80', 'Institute', 2, true),
-  ('Practical Guidance Session', 'Faculty providing one-on-one mentorship during practical exercises.', 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80', 'Students', 3, true),
-  ('Structured Learning Environment', 'Peaceful, focused classroom setting designed for optimal concentration.', 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80', 'Classroom', 4, true),
-  ('Student Certification & Recognition', 'Recognizing student achievements in typing and computer proficiency.', 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&auto=format&fit=crop&q=80', 'Events', 5, true),
-  ('Campus & Main Entrance', 'Located conveniently at Azhagiyamandapam junction on the Trivandrum–Nagercoil Highway.', 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=800&auto=format&fit=crop&q=80', 'Institute', 6, true)
+  ('Main Computer Practice Lab', 'Modern workstations providing individual computer access for every enrolled student.', 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80', 'Classroom', 1, true),
+  ('Dedicated Typing Section', 'Focused keyboarding workstations designed for English and Tamil typing practice.', 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80', 'Institute', 2, true),
+  ('One-on-One Instructor Guidance', 'Experienced faculty resolving student questions during practical software training.', 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80', 'Students', 3, true),
+  ('Focused Classroom Atmosphere', 'Disciplined and encouraging environment for learning and career preparation.', 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80', 'Classroom', 4, true),
+  ('Student Achievement & Certification', 'Celebrating course completions and typing speed milestones achieved by our students.', 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&auto=format&fit=crop&q=80', 'Events', 5, true),
+  ('Institute Facility at Azhagiyamandapam', 'Conveniently situated on 1st Floor, Trivandrum–Nagercoil Highway.', 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=800&auto=format&fit=crop&q=80', 'Institute', 6, true)
 ON CONFLICT DO NOTHING;

@@ -401,10 +401,13 @@ export const dataService = {
   async getSettings() {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('site_settings').select('*').single();
-        if (!error && data) return data;
+        const { data, error } = await supabase.from('site_settings').select('*').limit(1).maybeSingle();
+        if (!error && data) {
+          setLocal(STORAGE_KEYS.SETTINGS, data);
+          return data;
+        }
       } catch (e) {
-        console.warn('Supabase fetch failed, falling back to local storage', e);
+        console.warn('Supabase fetch settings failed, falling back to local storage', e);
       }
     }
     return getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
@@ -419,9 +422,11 @@ export const dataService = {
         if (!error && data) {
           setLocal(STORAGE_KEYS.SETTINGS, data);
           return data;
+        } else if (error) {
+          console.error('Supabase updateSettings error:', error);
         }
       } catch (e) {
-        console.warn('Supabase update failed, saving locally', e);
+        console.warn('Supabase updateSettings failed, saving locally', e);
       }
     }
     const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
@@ -430,7 +435,7 @@ export const dataService = {
     return updated;
   },
 
-
+  // COURSES
   async getCourses() {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -438,7 +443,12 @@ export const dataService = {
           .from('courses')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        if (!error && data) {
+          if (data.length > 0) setLocal(STORAGE_KEYS.COURSES, data);
+          return data;
+        } else if (error) {
+          console.error('Supabase getCourses error:', error);
+        }
       } catch (e) {
         console.warn('Supabase courses failed, using fallback', e);
       }
@@ -455,7 +465,13 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('courses').insert(newCourse).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+          setLocal(STORAGE_KEYS.COURSES, [...list, data]);
+          return data;
+        } else if (error) {
+          console.error('Supabase addCourse error:', error);
+        }
       } catch (e) {
         console.warn('Supabase addCourse failed', e);
       }
@@ -470,7 +486,14 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('courses').update(updates).eq('id', id).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+          const updatedList = list.map(c => (c.id === id ? { ...c, ...data } : c));
+          setLocal(STORAGE_KEYS.COURSES, updatedList);
+          return data;
+        } else if (error) {
+          console.error('Supabase updateCourse error:', error);
+        }
       } catch (e) {
         console.warn('Supabase updateCourse failed', e);
       }
@@ -484,7 +507,8 @@ export const dataService = {
   async deleteCourse(id) {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('courses').delete().eq('id', id);
+        const { error } = await supabase.from('courses').delete().eq('id', id);
+        if (error) console.error('Supabase deleteCourse error:', error);
       } catch (e) {
         console.warn('Supabase deleteCourse failed', e);
       }
@@ -495,7 +519,7 @@ export const dataService = {
     return true;
   },
 
-  // FACULTY
+  // FACULTY / INSTRUCTORS
   async getFaculty() {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -503,7 +527,12 @@ export const dataService = {
           .from('faculty')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        if (!error && data) {
+          if (data.length > 0) setLocal(STORAGE_KEYS.FACULTY, data);
+          return data;
+        } else if (error) {
+          console.error('Supabase getFaculty error:', error);
+        }
       } catch (e) {
         console.warn('Supabase faculty failed, using fallback', e);
       }
@@ -520,7 +549,13 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faculty').insert(newMember).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+          setLocal(STORAGE_KEYS.FACULTY, [...list, data]);
+          return data;
+        } else if (error) {
+          console.error('Supabase addFaculty error:', error);
+        }
       } catch (e) {
         console.warn('Supabase addFaculty failed', e);
       }
@@ -535,7 +570,14 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faculty').update(updates).eq('id', id).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+          const updatedList = list.map(f => (f.id === id ? { ...f, ...data } : f));
+          setLocal(STORAGE_KEYS.FACULTY, updatedList);
+          return data;
+        } else if (error) {
+          console.error('Supabase updateFaculty error:', error);
+        }
       } catch (e) {
         console.warn('Supabase updateFaculty failed', e);
       }
@@ -549,7 +591,8 @@ export const dataService = {
   async deleteFaculty(id) {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('faculty').delete().eq('id', id);
+        const { error } = await supabase.from('faculty').delete().eq('id', id);
+        if (error) console.error('Supabase deleteFaculty error:', error);
       } catch (e) {
         console.warn('Supabase deleteFaculty failed', e);
       }
@@ -562,20 +605,21 @@ export const dataService = {
 
   // GALLERY
   async getGallery(category = 'All') {
-    let items = [];
+    let items = null;
     if (isSupabaseConfigured && supabase) {
       try {
-        const query = supabase.from('gallery').select('*').order('display_order', { ascending: true });
+        let query = supabase.from('gallery').select('*').order('display_order', { ascending: true });
         if (category && category !== 'All') {
-          query.eq('category', category);
+          query = query.eq('category', category);
         }
         const { data, error } = await query;
-        if (!error && data && data.length > 0) items = data;
+        if (!error && data) items = data;
+        else if (error) console.error('Supabase getGallery error:', error);
       } catch (e) {
         console.warn('Supabase gallery failed', e);
       }
     }
-    if (items.length === 0) {
+    if (items === null) {
       items = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
       if (category && category !== 'All') {
         items = items.filter(img => img.category.toLowerCase() === category.toLowerCase());
@@ -593,7 +637,13 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('gallery').insert(newItem).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+          setLocal(STORAGE_KEYS.GALLERY, [data, ...list]);
+          return data;
+        } else if (error) {
+          console.error('Supabase addGalleryItem error:', error);
+        }
       } catch (e) {
         console.warn('Supabase addGallery failed', e);
       }
@@ -607,7 +657,8 @@ export const dataService = {
   async deleteGalleryItem(id) {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('gallery').delete().eq('id', id);
+        const { error } = await supabase.from('gallery').delete().eq('id', id);
+        if (error) console.error('Supabase deleteGalleryItem error:', error);
       } catch (e) {
         console.warn('Supabase deleteGallery failed', e);
       }
@@ -623,7 +674,10 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('reviews').select('*').order('created_at', { ascending: false });
-        if (!error && data && data.length > 0) return data;
+        if (!error && data) {
+          if (data.length > 0) setLocal(STORAGE_KEYS.REVIEWS, data);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase reviews failed', e);
       }
@@ -642,7 +696,11 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('reviews').insert(newRev).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
+          setLocal(STORAGE_KEYS.REVIEWS, [data, ...list]);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase addReview failed', e);
       }
@@ -750,7 +808,10 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').select('*').order('display_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        if (!error && data) {
+          if (data.length > 0) setLocal(STORAGE_KEYS.FAQ, data);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase FAQ failed', e);
       }
