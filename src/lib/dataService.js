@@ -413,7 +413,9 @@ export const dataService = {
   async updateSettings(updates) {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('site_settings').upsert({ id: 'default-settings', ...updates }).select().single();
+        const { data: existing } = await supabase.from('site_settings').select('id').limit(1).maybeSingle();
+        const payload = existing?.id ? { id: existing.id, ...updates } : { ...updates };
+        const { data, error } = await supabase.from('site_settings').upsert(payload).select().single();
         if (!error && data) {
           setLocal(STORAGE_KEYS.SETTINGS, data);
           return data;
@@ -428,7 +430,7 @@ export const dataService = {
     return updated;
   },
 
-  // COURSES
+
   async getCourses() {
     if (isSupabaseConfigured && supabase) {
       try {
