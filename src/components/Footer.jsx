@@ -14,7 +14,7 @@ import {
 export default function Footer({ settings }) {
   const phone = settings?.phone || '063809 27568';
   const email = settings?.email || 'contact@maxinstitute.edu.in';
-  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
+  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
   const closingTime = settings?.closing_time || '06:00 PM';
   const rating = settings?.google_rating || 4.9;
   const reviewCount = settings?.total_google_reviews || 110;

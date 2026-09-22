@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   tagline TEXT NOT NULL DEFAULT 'Empowering Students With Skills for Tomorrow',
   phone TEXT NOT NULL DEFAULT '063809 27568',
   email TEXT DEFAULT 'contact@maxinstitute.edu.in',
-  address TEXT NOT NULL DEFAULT '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
+  address TEXT NOT NULL DEFAULT '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   opening_time TEXT NOT NULL DEFAULT '09:00 AM',
   closing_time TEXT NOT NULL DEFAULT '06:00 PM',
   google_rating NUMERIC(2,1) DEFAULT 4.9,
@@ -182,7 +182,7 @@ VALUES (
   'Empowering Students With Skills for Tomorrow',
   '063809 27568',
   'contact@maxinstitute.edu.in',
-  '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
+  '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   '09:00 AM',
   '06:00 PM',
   4.9,
@@ -225,7 +225,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO public.faq (question, answer, category, display_order)
 VALUES
   ('What courses are available at MAX Educational Institution?', 'MAX offers professional computer education including Basic Computer Training, MS Office Mastery, Diploma in Computer Applications (DCA), Programming Fundamentals, English & Tamil Touch Typing (Junior & Senior), Speed Development, and Technical Fundamentals.', 'Courses', 1),
-  ('Where is MAX Educational Institution located?', 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.', 'General', 2),
+  ('Where is MAX Educational Institution located?', 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.', 'General', 2),
   ('How can I enquire or register for a course?', 'You can submit the online enquiry form on our website with your contact information, or call us directly at 063809 27568. Our team will reach out to explain batch schedules, curriculum, and admission details.', 'Admissions', 3),
   ('Can I visit the institute and see the labs before enrolling?', 'Absolutely. Prospective students and parents are warmly invited to visit our center between 09:00 AM and 06:00 PM Monday through Saturday to see our computer lab, interact with the instructors, and test typing equipment.', 'General', 4),
   ('Are class timings flexible for college students and working professionals?', 'Yes! We offer morning, afternoon, and evening batches with flexible timing options to suit the daily schedules of school pupils, college students, and working individuals.', 'Courses', 5)

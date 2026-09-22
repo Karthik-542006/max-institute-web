@@ -9,16 +9,19 @@ export default function Gallery() {
   const [gallery, setGallery] = useState([]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedImage, setSelectedImage] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(18);
 
   useEffect(() => {
     async function load() {
       const data = await dataService.getGallery(activeCategory);
       setGallery(data);
+      setVisibleCount(18);
     }
     load();
   }, [activeCategory]);
 
   const categories = ['All', 'Institute', 'Classroom', 'Students', 'Activities', 'Events'];
+  const paginatedGallery = gallery.slice(0, visibleCount);
 
   return (
     <div className="py-12 flex flex-col">
@@ -60,15 +63,29 @@ export default function Gallery() {
           </div>
 
           {/* Gallery Grid */}
-          {gallery.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-              {gallery.map((item) => (
-                <GalleryCard
-                  key={item.id}
-                  item={item}
-                  onOpen={(img) => setSelectedImage(img)}
-                />
-              ))}
+          {paginatedGallery.length > 0 ? (
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                {paginatedGallery.map((item) => (
+                  <GalleryCard
+                    key={item.id}
+                    item={item}
+                    onOpen={(img) => setSelectedImage(img)}
+                  />
+                ))}
+              </div>
+
+              {/* Load More Button for 1000+ items */}
+              {visibleCount < gallery.length && (
+                <div className="text-center pt-6">
+                  <button
+                    onClick={() => setVisibleCount((prev) => prev + 36)}
+                    className="px-8 py-3.5 rounded-2xl bg-brand-primary text-white font-bold text-xs sm:text-sm hover:bg-brand-primary/90 transition-all shadow-md inline-flex items-center gap-2"
+                  >
+                    <span>Load More Photos ({gallery.length - visibleCount} remaining)</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-16 bg-brand-bg rounded-3xl border border-dashed border-brand-border">

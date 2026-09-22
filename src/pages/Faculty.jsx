@@ -22,7 +22,8 @@ export default function Faculty() {
   useEffect(() => {
     async function load() {
       const data = await dataService.getFaculty();
-      setFaculty(data.filter(f => f.is_active));
+      const activeFaculty = data.filter(f => f.is_active);
+      setFaculty(activeFaculty.length > 0 ? activeFaculty : data);
     }
     load();
   }, []);

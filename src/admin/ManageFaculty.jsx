@@ -572,7 +572,7 @@ export default function ManageFaculty() {
             <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="sm">
+            <Button type="submit" variant="primary" size="sm" loading={isUploading} disabled={isProcessing || isUploading}>
               {editingFaculty ? 'Save Changes' : 'Add Member'}
             </Button>
           </div>

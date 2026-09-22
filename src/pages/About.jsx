@@ -208,7 +208,7 @@ export default function About({ settings }) {
             Visit Our Center in Azhagiyamandapam
           </h3>
           <p className="text-sm text-brand-muted mb-8 leading-relaxed max-w-xl mx-auto">
-            Conveniently located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam. Open until 6:00 PM.
+            Conveniently located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam. Open until 6:00 PM.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/contact">

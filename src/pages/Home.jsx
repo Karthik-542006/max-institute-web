@@ -62,7 +62,8 @@ export default function Home({ settings }) {
       setCourses(coursesData.filter(c => c.is_active));
       setFaculty(facultyData.filter(f => f.is_active));
       setReviews(reviewsData.filter(r => r.is_featured));
-      setGallery(galleryData.filter(g => g.is_featured));
+      const featuredGallery = galleryData.filter(g => g.is_featured);
+      setGallery(featuredGallery.length > 0 ? featuredGallery : galleryData);
       setFaq(faqData.filter(q => q.is_active));
     }
     loadData();
@@ -525,7 +526,7 @@ export default function Home({ settings }) {
                   <div>
                     <h4 className="text-sm font-bold text-brand-primary mb-1">Campus Location</h4>
                     <p className="text-xs sm:text-sm text-brand-muted leading-relaxed">
-                      {settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167'}
+                      {settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167'}
                     </p>
                   </div>
                 </div>

@@ -73,7 +73,7 @@ export default function Contact({ settings }) {
 
   const phone = settings?.phone || '063809 27568';
   const email = settings?.email || 'contact@maxinstitute.edu.in';
-  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
+  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
   const closingTime = settings?.closing_time || '06:00 PM';
   const mapEmbedUrl = settings?.google_maps_embed || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3948.337774780572!2d77.29177117565349!3d8.269151591765038!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04fe68846c4fa3%3A0xe5108b3e34bcf93f!2sAzhagiyamandapam%2C%20Tamil%20Nadu!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin';
 
@@ -123,7 +123,7 @@ export default function Contact({ settings }) {
                       {address}
                     </p>
                     <div className="mt-2 text-[11px] font-semibold text-brand-secondary inline-block">
-                      Landmark: Opposite Mosque, Near Nagercoil Bus Stop
+                      Landmark: Opposite Mosque
                     </div>
                   </div>
                 </div>

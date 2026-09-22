@@ -1,4 +1,5 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase.js';
+import { idbGet, idbSet, idbDel } from './idb.js';
 
 const STORAGE_KEYS = {
   SETTINGS: 'max_site_settings',
@@ -17,7 +18,7 @@ const DEFAULT_SETTINGS = {
   tagline: 'Empowering Students With Skills for Tomorrow',
   phone: '063809 27568',
   email: 'contact@maxinstitute.edu.in',
-  address: '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
+  address: '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   opening_time: '09:00 AM',
   closing_time: '06:00 PM',
   google_rating: 4.9,
@@ -341,7 +342,7 @@ const DEFAULT_FAQ = [
   {
     id: 'faq-2',
     question: 'Where is MAX Educational Institution located?',
-    answer: 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Near Nagercoil Bus Stop, Junction, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.',
+    answer: 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.',
     category: 'General',
     display_order: 2,
     is_active: true
@@ -372,9 +373,28 @@ const DEFAULT_FAQ = [
   }
 ];
 
-// Local Storage Helper
+// Local & IndexedDB Storage Helpers
+async function getStored(key, defaultValue) {
+  try {
+    const idbData = await idbGet(key, null);
+    if (idbData !== null && Array.isArray(idbData) && idbData.length > 0) {
+      return idbData;
+    }
+  } catch (e) {
+    console.warn('IndexedDB read warning:', e);
+  }
+
+  return getLocal(key, defaultValue);
+}
+
+async function setStored(key, value) {
+  await idbSet(key, value);
+  setLocal(key, value);
+}
+
 function getLocal(key, defaultValue) {
   try {
+    if (typeof localStorage === 'undefined') return defaultValue;
     const item = localStorage.getItem(key);
     if (!item) {
       localStorage.setItem(key, JSON.stringify(defaultValue));
@@ -389,10 +409,16 @@ function getLocal(key, defaultValue) {
 
 function setLocal(key, value) {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
     console.error('Error writing to localStorage', e);
   }
+}
+
+function isUUID(str) {
+  if (typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
 // Unified Data Service API
@@ -410,7 +436,15 @@ export const dataService = {
         console.warn('Supabase fetch settings failed, falling back to local storage', e);
       }
     }
-    return getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    const res = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    if (res && res.address) {
+      if (res.address.includes('Near Nagercoil Bus Stop') || res.address.includes('Junction,')) {
+        res.address = res.address.replace(/,?\s*Near Nagercoil Bus Stop/g, '').replace(/,?\s*Junction/g, '').trim();
+        setLocal(STORAGE_KEYS.SETTINGS, res);
+        idbSet(STORAGE_KEYS.SETTINGS, res);
+      }
+    }
+    return res;
   },
 
   async updateSettings(updates) {
@@ -437,235 +471,404 @@ export const dataService = {
 
   // COURSES
   async getCourses() {
+    const deletedIds = new Set(getLocal('max_courses_deleted_ids', []).map(String));
+    let items = null;
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('courses')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && data) {
-          if (data.length > 0) setLocal(STORAGE_KEYS.COURSES, data);
-          return data;
+        if (!error && Array.isArray(data)) {
+          const supabaseIds = new Set(data.map(d => String(d.id)));
+          const localItems = getLocal(STORAGE_KEYS.COURSES, []);
+          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
+
+          let combined = [...data, ...localOnly];
+          items = combined.filter(c => !deletedIds.has(String(c.id)));
+          setLocal(STORAGE_KEYS.COURSES, items);
         } else if (error) {
-          console.error('Supabase getCourses error:', error);
+          console.warn('Supabase getCourses notice:', error.message || error);
         }
       } catch (e) {
-        console.warn('Supabase courses failed, using fallback', e);
+        console.warn('Supabase courses failed', e);
       }
     }
-    return getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+
+    if (items === null) {
+      let localItems = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+      items = localItems.filter(c => !deletedIds.has(String(c.id)));
+    }
+
+    return items;
   },
 
   async addCourse(course) {
+    const newId = (course.id && isUUID(course.id))
+      ? course.id
+      : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `course-${Date.now()}`);
+
     const newCourse = {
       ...course,
-      id: course.id || `course-${Date.now()}`,
-      created_at: new Date().toISOString()
+      id: newId,
+      is_active: course.is_active ?? true,
+      created_at: course.created_at || new Date().toISOString()
     };
+
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const updatedLocal = [newCourse, ...currentLocal.filter(c => String(c.id) !== String(newCourse.id))];
+    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
+
+    const deletedIds = getLocal('max_courses_deleted_ids', []);
+    if (deletedIds.includes(String(newCourse.id))) {
+      setLocal('max_courses_deleted_ids', deletedIds.filter(id => String(id) !== String(newCourse.id)));
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('courses').insert(newCourse).select().single();
+        const payload = { ...newCourse };
+        if (!isUUID(payload.id)) delete payload.id;
+        const { data, error } = await supabase.from('courses').insert(payload).select().single();
         if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-          setLocal(STORAGE_KEYS.COURSES, [...list, data]);
+          const latestLocal = getLocal(STORAGE_KEYS.COURSES, updatedLocal);
+          const replaced = latestLocal.map(x => (String(x.id) === String(newCourse.id) ? data : x));
+          setLocal(STORAGE_KEYS.COURSES, replaced);
           return data;
-        } else if (error) {
-          console.error('Supabase addCourse error:', error);
         }
       } catch (e) {
         console.warn('Supabase addCourse failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const updated = [...list, newCourse];
-    setLocal(STORAGE_KEYS.COURSES, updated);
+
     return newCourse;
   },
 
   async updateCourse(id, updates) {
+    const stringId = String(id);
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const updatedLocal = currentLocal.map(c => (String(c.id) === stringId ? { ...c, ...updates } : c));
+    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('courses').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-          const updatedList = list.map(c => (c.id === id ? { ...c, ...data } : c));
-          setLocal(STORAGE_KEYS.COURSES, updatedList);
-          return data;
-        } else if (error) {
-          console.error('Supabase updateCourse error:', error);
+        if (isUUID(id)) {
+          const { data, error } = await supabase.from('courses').update(updates).eq('id', id).select().single();
+          if (!error && data) {
+            const latestLocal = getLocal(STORAGE_KEYS.COURSES, updatedLocal);
+            const replaced = latestLocal.map(x => (String(x.id) === stringId ? { ...x, ...data } : x));
+            setLocal(STORAGE_KEYS.COURSES, replaced);
+            return data;
+          }
         }
       } catch (e) {
         console.warn('Supabase updateCourse failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const updated = list.map(c => (c.id === id ? { ...c, ...updates } : c));
-    setLocal(STORAGE_KEYS.COURSES, updated);
-    return updated.find(c => c.id === id);
+
+    return updatedLocal.find(c => String(c.id) === stringId);
   },
 
   async deleteCourse(id) {
+    const stringId = String(id);
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const filteredLocal = currentLocal.filter(c => String(c.id) !== stringId);
+    setLocal(STORAGE_KEYS.COURSES, filteredLocal);
+
+    const deletedIds = getLocal('max_courses_deleted_ids', []);
+    if (!deletedIds.includes(stringId)) {
+      setLocal('max_courses_deleted_ids', [...deletedIds, stringId]);
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.from('courses').delete().eq('id', id);
-        if (error) console.error('Supabase deleteCourse error:', error);
+        if (isUUID(id)) {
+          await supabase.from('courses').delete().eq('id', id);
+        }
       } catch (e) {
         console.warn('Supabase deleteCourse failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const filtered = list.filter(c => c.id !== id);
-    setLocal(STORAGE_KEYS.COURSES, filtered);
+
     return true;
   },
 
   // FACULTY / INSTRUCTORS
   async getFaculty() {
+    const deletedIds = new Set(getLocal('max_faculty_deleted_ids', []).map(String));
+    let items = null;
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('faculty')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && data) {
-          if (data.length > 0) setLocal(STORAGE_KEYS.FACULTY, data);
-          return data;
+        if (!error && Array.isArray(data)) {
+          const supabaseIds = new Set(data.map(d => String(d.id)));
+          const localItems = getLocal(STORAGE_KEYS.FACULTY, []);
+          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
+
+          let combined = [...data, ...localOnly];
+          items = combined.filter(f => !deletedIds.has(String(f.id)));
+          setLocal(STORAGE_KEYS.FACULTY, items);
         } else if (error) {
-          console.error('Supabase getFaculty error:', error);
+          console.warn('Supabase getFaculty notice:', error.message || error);
         }
       } catch (e) {
         console.warn('Supabase faculty failed, using fallback', e);
       }
     }
-    return getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+
+    if (items === null) {
+      let localItems = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+      items = localItems.filter(f => !deletedIds.has(String(f.id)));
+    }
+
+    return items;
   },
 
   async addFaculty(member) {
+    const newId = (member.id && isUUID(member.id))
+      ? member.id
+      : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `faculty-${Date.now()}`);
+
     const newMember = {
       ...member,
-      id: member.id || `faculty-${Date.now()}`,
-      created_at: new Date().toISOString()
+      id: newId,
+      is_active: member.is_active ?? true,
+      display_order: member.display_order || 1,
+      created_at: member.created_at || new Date().toISOString()
     };
+
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const updatedLocal = [newMember, ...currentLocal.filter(f => String(f.id) !== String(newMember.id))];
+    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+
+    const deletedIds = getLocal('max_faculty_deleted_ids', []);
+    if (deletedIds.includes(String(newMember.id))) {
+      setLocal('max_faculty_deleted_ids', deletedIds.filter(id => String(id) !== String(newMember.id)));
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('faculty').insert(newMember).select().single();
+        const payload = { ...newMember };
+        if (!isUUID(payload.id)) delete payload.id;
+        const { data, error } = await supabase.from('faculty').insert(payload).select().single();
         if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-          setLocal(STORAGE_KEYS.FACULTY, [...list, data]);
+          const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+          const replaced = latestLocal.map(x => (String(x.id) === String(newMember.id) ? data : x));
+          setLocal(STORAGE_KEYS.FACULTY, replaced);
           return data;
         } else if (error) {
-          console.error('Supabase addFaculty error:', error);
+          console.warn('Supabase addFaculty notice:', error.message || error);
         }
       } catch (e) {
         console.warn('Supabase addFaculty failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const updated = [...list, newMember];
-    setLocal(STORAGE_KEYS.FACULTY, updated);
+
     return newMember;
   },
 
   async updateFaculty(id, updates) {
+    const stringId = String(id);
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const updatedLocal = currentLocal.map(f => (String(f.id) === stringId ? { ...f, ...updates } : f));
+    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('faculty').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-          const updatedList = list.map(f => (f.id === id ? { ...f, ...data } : f));
-          setLocal(STORAGE_KEYS.FACULTY, updatedList);
-          return data;
-        } else if (error) {
-          console.error('Supabase updateFaculty error:', error);
+        if (isUUID(id)) {
+          const { data, error } = await supabase.from('faculty').update(updates).eq('id', id).select().single();
+          if (!error && data) {
+            const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+            const replaced = latestLocal.map(x => (String(x.id) === stringId ? { ...x, ...data } : x));
+            setLocal(STORAGE_KEYS.FACULTY, replaced);
+            return data;
+          }
         }
       } catch (e) {
         console.warn('Supabase updateFaculty failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const updated = list.map(f => (f.id === id ? { ...f, ...updates } : f));
-    setLocal(STORAGE_KEYS.FACULTY, updated);
-    return updated.find(f => f.id === id);
+
+    return updatedLocal.find(f => String(f.id) === stringId);
   },
 
   async deleteFaculty(id) {
+    const stringId = String(id);
+
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const filteredLocal = currentLocal.filter(f => String(f.id) !== stringId);
+    setLocal(STORAGE_KEYS.FACULTY, filteredLocal);
+
+    const deletedIds = getLocal('max_faculty_deleted_ids', []);
+    if (!deletedIds.includes(stringId)) {
+      setLocal('max_faculty_deleted_ids', [...deletedIds, stringId]);
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.from('faculty').delete().eq('id', id);
-        if (error) console.error('Supabase deleteFaculty error:', error);
+        if (isUUID(id)) {
+          const { error } = await supabase.from('faculty').delete().eq('id', id);
+          if (error) console.warn('Supabase deleteFaculty notice:', error.message || error);
+        }
       } catch (e) {
         console.warn('Supabase deleteFaculty failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const filtered = list.filter(f => f.id !== id);
-    setLocal(STORAGE_KEYS.FACULTY, filtered);
+
     return true;
   },
 
-  // GALLERY
+  // GALLERY (Supports 1000+ images with IndexedDB & Supabase Sync)
   async getGallery(category = 'All') {
+    const deletedIds = new Set(getLocal('max_gallery_deleted_ids', []).map(String));
     let items = null;
+
     if (isSupabaseConfigured && supabase) {
       try {
-        let query = supabase.from('gallery').select('*').order('display_order', { ascending: true });
+        let query = supabase.from('gallery').select('*').order('created_at', { ascending: false });
         if (category && category !== 'All') {
           query = query.eq('category', category);
         }
         const { data, error } = await query;
-        if (!error && data) items = data;
-        else if (error) console.error('Supabase getGallery error:', error);
+        if (!error && Array.isArray(data)) {
+          const supabaseIds = new Set(data.map(d => String(d.id)));
+          const localItems = await getStored(STORAGE_KEYS.GALLERY, []);
+          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
+
+          let combined = [...data, ...localOnly];
+          if (category && category !== 'All') {
+            combined = combined.filter(img => img.category?.toLowerCase() === category.toLowerCase());
+          }
+          items = combined.filter(img => !deletedIds.has(String(img.id)));
+          await setStored(STORAGE_KEYS.GALLERY, items);
+        } else if (error) {
+          console.warn('Supabase getGallery notice:', error.message || error);
+        }
       } catch (e) {
         console.warn('Supabase gallery failed', e);
       }
     }
+
     if (items === null) {
-      items = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+      let localItems = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
       if (category && category !== 'All') {
-        items = items.filter(img => img.category.toLowerCase() === category.toLowerCase());
+        localItems = localItems.filter(img => img.category?.toLowerCase() === category.toLowerCase());
       }
+      items = localItems.filter(img => !deletedIds.has(String(img.id)));
     }
+
     return items;
   },
 
   async addGalleryItem(item) {
-    const newItem = {
-      ...item,
-      id: item.id || `gal-${Date.now()}`,
-      created_at: new Date().toISOString()
-    };
+    const items = await this.addGalleryItems([item]);
+    return items[0];
+  },
+
+  async addGalleryItems(itemsArray) {
+    if (!Array.isArray(itemsArray) || itemsArray.length === 0) return [];
+
+    const formattedItems = itemsArray.map((item, idx) => {
+      const newId = (item.id && isUUID(item.id))
+        ? item.id
+        : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `gal-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`);
+
+      return {
+        ...item,
+        id: newId,
+        is_featured: item.is_featured ?? true,
+        created_at: item.created_at || new Date(Date.now() - idx * 100).toISOString()
+      };
+    });
+
+    // 1. Update local & IndexedDB storage
+    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const existingMap = new Map(currentLocal.map(x => [String(x.id), x]));
+
+    formattedItems.forEach(item => {
+      existingMap.set(String(item.id), item);
+    });
+
+    const updatedList = Array.from(existingMap.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    await setStored(STORAGE_KEYS.GALLERY, updatedList);
+
+    // Clear from deleted tracking if re-added
+    const deletedIds = getLocal('max_gallery_deleted_ids', []);
+    const addedIdsSet = new Set(formattedItems.map(i => String(i.id)));
+    const filteredDeleted = deletedIds.filter(id => !addedIdsSet.has(String(id)));
+    setLocal('max_gallery_deleted_ids', filteredDeleted);
+
+    // 2. Batch insert into Supabase if configured (in chunks of 50 for max performance)
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('gallery').insert(newItem).select().single();
-        if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-          setLocal(STORAGE_KEYS.GALLERY, [data, ...list]);
-          return data;
-        } else if (error) {
-          console.error('Supabase addGalleryItem error:', error);
+        const CHUNK_SIZE = 50;
+        const insertedFromSupabase = [];
+
+        for (let i = 0; i < formattedItems.length; i += CHUNK_SIZE) {
+          const chunk = formattedItems.slice(i, i + CHUNK_SIZE).map(item => {
+            const payload = { ...item };
+            if (!isUUID(payload.id)) delete payload.id;
+            return payload;
+          });
+
+          const { data, error } = await supabase.from('gallery').insert(chunk).select();
+          if (!error && Array.isArray(data)) {
+            insertedFromSupabase.push(...data);
+          } else if (error) {
+            console.warn('Supabase batch insert notice:', error.message || error);
+          }
+        }
+
+        if (insertedFromSupabase.length > 0) {
+          const latestLocal = await getStored(STORAGE_KEYS.GALLERY, updatedList);
+          const sbMap = new Map(insertedFromSupabase.map(d => [String(d.id), d]));
+          const replaced = latestLocal.map(x => sbMap.get(String(x.id)) || x);
+          await setStored(STORAGE_KEYS.GALLERY, replaced);
         }
       } catch (e) {
-        console.warn('Supabase addGallery failed', e);
+        console.warn('Supabase addGalleryItems batch failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-    const updated = [newItem, ...list];
-    setLocal(STORAGE_KEYS.GALLERY, updated);
-    return newItem;
+
+    return formattedItems;
   },
 
   async deleteGalleryItem(id) {
+    return this.deleteGalleryItems([id]);
+  },
+
+  async deleteGalleryItems(idsArray) {
+    if (!Array.isArray(idsArray) || idsArray.length === 0) return true;
+
+    const idsSet = new Set(idsArray.map(String));
+
+    // 1. Delete from local IndexedDB & LocalStorage
+    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const filteredLocal = currentLocal.filter(g => !idsSet.has(String(g.id)));
+    await setStored(STORAGE_KEYS.GALLERY, filteredLocal);
+
+    // 2. Track deleted IDs
+    const deletedIds = getLocal('max_gallery_deleted_ids', []);
+    const updatedDeleted = Array.from(new Set([...deletedIds, ...idsArray.map(String)]));
+    setLocal('max_gallery_deleted_ids', updatedDeleted);
+
+    // 3. Batch delete from Supabase if configured & valid UUIDs
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.from('gallery').delete().eq('id', id);
-        if (error) console.error('Supabase deleteGalleryItem error:', error);
+        const validUUIDs = idsArray.filter(isUUID);
+        if (validUUIDs.length > 0) {
+          const { error } = await supabase.from('gallery').delete().in('id', validUUIDs);
+          if (error) console.warn('Supabase deleteGalleryItems notice:', error.message || error);
+        }
       } catch (e) {
-        console.warn('Supabase deleteGallery failed', e);
+        console.warn('Supabase deleteGalleryItems failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-    const filtered = list.filter(g => g.id !== id);
-    setLocal(STORAGE_KEYS.GALLERY, filtered);
+
     return true;
   },
 
