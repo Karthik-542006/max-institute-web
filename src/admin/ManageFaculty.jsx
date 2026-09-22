@@ -269,53 +269,80 @@ export default function ManageFaculty() {
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-border/60">
-              {faculty.map((member) => (
-                <tr key={member.id} className="hover:bg-brand-bg/40 transition-colors">
-                  <td className="py-4 px-6 flex items-center gap-3">
-                    <img
-                      src={member.photo_url || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80'}
-                      alt={member.name}
-                      className="w-10 h-10 rounded-xl object-cover border border-brand-border shrink-0"
-                    />
-                    <div>
-                      <div className="font-bold text-brand-primary">{member.name}</div>
-                      <div className="text-[11px] text-brand-muted line-clamp-1 max-w-xs">{member.description}</div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6 text-brand-text font-medium">{member.designation}</td>
-                  <td className="py-4 px-6 text-brand-muted">{member.specialization}</td>
-                  <td className="py-4 px-6 text-brand-muted">{member.experience}</td>
-                  <td className="py-4 px-6">
-                    <button
-                      onClick={() => toggleActive(member)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                        member.is_active
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-gray-100 text-gray-500 border-gray-200'
-                      }`}
-                    >
-                      {member.is_active ? <Check className="w-3 h-3 text-emerald-600" /> : <X className="w-3 h-3 text-gray-400" />}
-                      <span>{member.is_active ? 'Active' : 'Hidden'}</span>
-                    </button>
-                  </td>
-                  <td className="py-4 px-6 text-right space-x-2">
-                    <button
-                      onClick={() => openEdit(member)}
-                      className="p-1.5 text-brand-secondary hover:text-brand-primary hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(member.id, member.name)}
-                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+              {faculty.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 px-6 text-center text-brand-muted">
+                    <Users className="w-10 h-10 mx-auto mb-2 text-brand-muted/40" />
+                    <p className="text-sm font-semibold text-brand-primary">No faculty members found</p>
+                    <p className="text-xs mt-0.5">Click "Add Faculty Member" above to create one.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                faculty.map((member) => (
+                  <tr key={member.id} className="hover:bg-brand-bg/40 transition-colors">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 border border-brand-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                          {member.photo_url ? (
+                            <img
+                              src={member.photo_url}
+                              alt={member.name || 'Faculty Member'}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                const fallback = e.target.parentElement.querySelector('.fallback-icon');
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          <div
+                            className="fallback-icon w-full h-full items-center justify-center text-brand-secondary bg-blue-50"
+                            style={{ display: member.photo_url ? 'none' : 'flex' }}
+                          >
+                            <User className="w-5 h-5" />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-brand-primary">{member.name || 'Unnamed Member'}</div>
+                          <div className="text-[11px] text-brand-muted line-clamp-1 max-w-xs">{member.description || member.specialization || 'Faculty Member'}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-brand-text font-medium">{member.designation}</td>
+                    <td className="py-4 px-6 text-brand-muted">{member.specialization}</td>
+                    <td className="py-4 px-6 text-brand-muted">{member.experience}</td>
+                    <td className="py-4 px-6">
+                      <button
+                        onClick={() => toggleActive(member)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                          member.is_active
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-gray-100 text-gray-500 border-gray-200'
+                        }`}
+                      >
+                        {member.is_active ? <Check className="w-3 h-3 text-emerald-600" /> : <X className="w-3 h-3 text-gray-400" />}
+                        <span>{member.is_active ? 'Active' : 'Hidden'}</span>
+                      </button>
+                    </td>
+                    <td className="py-4 px-6 text-right space-x-2">
+                      <button
+                        onClick={() => openEdit(member)}
+                        className="p-1.5 text-brand-secondary hover:text-brand-primary hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(member.id, member.name)}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -620,8 +620,12 @@ export const dataService = {
       }
     }
 
-    if (items === null) {
+    if (items === null || (Array.isArray(items) && items.length === 0 && deletedIds.size === 0)) {
       let localItems = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+      if (!Array.isArray(localItems) || localItems.length === 0) {
+        localItems = DEFAULT_FACULTY;
+        setLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+      }
       items = localItems.filter(f => !deletedIds.has(String(f.id)));
     }
 
