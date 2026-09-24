@@ -506,15 +506,78 @@ export const dataService = {
     return settings;
   },
 
+  // SETTINGS & REAL-TIME MULTI-DEVICE SYNC ALGORITHM
+  broadcastSettingsChange(detail = null) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_settings_updated', { detail }));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_settings_sync_channel');
+        bc.postMessage({ type: 'SETTINGS_CHANGED', detail });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
+  subscribeToSettings(callback) {
+    const handleLocal = (e) => callback(e.detail || null);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('max_settings_updated', handleLocal);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('max_settings_sync_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'SETTINGS_CHANGED') {
+            callback(event.data.detail);
+          }
+        };
+      } catch (e) {}
+    }
+
+    let supabaseChannel = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        supabaseChannel = supabase
+          .channel('public:site_settings:realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'site_settings' },
+            (payload) => {
+              callback(payload.new || payload.old || payload);
+            }
+          )
+          .subscribe();
+      } catch (e) {
+        console.warn('Supabase site_settings realtime subscription failed:', e);
+      }
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('max_settings_updated', handleLocal);
+      }
+      if (channel) channel.close();
+      if (supabaseChannel && supabase) {
+        supabase.removeChannel(supabaseChannel);
+      }
+    };
+  },
+
   async updateSettings(updates) {
+    let result = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: existing } = await supabase.from('site_settings').select('id').limit(1).maybeSingle();
         const payload = existing?.id ? { id: existing.id, ...updates } : { ...updates };
         const { data, error } = await supabase.from('site_settings').upsert(payload).select().single();
         if (!error && data) {
+          result = data;
           setLocal(STORAGE_KEYS.SETTINGS, data);
-          return data;
         } else if (error) {
           console.error('Supabase updateSettings error:', error);
         }
@@ -522,10 +585,14 @@ export const dataService = {
         console.warn('Supabase updateSettings failed, saving locally', e);
       }
     }
-    const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
-    const updated = { ...current, ...updates, updated_at: new Date().toISOString() };
-    setLocal(STORAGE_KEYS.SETTINGS, updated);
-    return updated;
+    if (!result) {
+      const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+      result = { ...current, ...updates, updated_at: new Date().toISOString() };
+      setLocal(STORAGE_KEYS.SETTINGS, result);
+    }
+    idbSet(STORAGE_KEYS.SETTINGS, result);
+    this.broadcastSettingsChange(result);
+    return result;
   },
 
   // COURSES

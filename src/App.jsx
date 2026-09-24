@@ -50,9 +50,10 @@ export default function App() {
 
   useEffect(() => {
     fetchSettings();
-    const handleUpdate = () => fetchSettings();
-    window.addEventListener('max_settings_updated', handleUpdate);
-    return () => window.removeEventListener('max_settings_updated', handleUpdate);
+    const unsubscribe = dataService.subscribeToSettings(() => {
+      fetchSettings();
+    });
+    return () => unsubscribe();
   }, []);
 
   return (

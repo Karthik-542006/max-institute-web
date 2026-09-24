@@ -61,32 +61,7 @@ export default function Settings() {
       <div className="bg-white rounded-3xl p-6 sm:p-10 border border-brand-border shadow-soft">
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
-                Institute Name
-              </label>
-              <input
-                type="text"
-                required
-                value={form.institute_name}
-                onChange={(e) => setForm({ ...form, institute_name: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
-                Institutional Tagline
-              </label>
-              <input
-                type="text"
-                required
-                value={form.tagline}
-                onChange={(e) => setForm({ ...form, tagline: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
-              />
-            </div>
-          </div>
+
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
