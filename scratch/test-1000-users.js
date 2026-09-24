@@ -1,7 +1,7 @@
 import { dataService } from '../src/lib/dataService.js';
 
 console.log('=================================================================');
-console.log('🚀 RUNNING 1,000 USER REALISTIC SIMULATION & ACCESSIBILITY AUDIT');
+console.log('🚀 RUNNING COMPREHENSIVE 1,000 USER SIMULATION & EDGE-CASE FUZZING');
 console.log('=================================================================\n');
 
 let totalInvocations = 0;
@@ -137,6 +137,39 @@ async function run1000UserSimulation() {
     } catch (err) {
       errors.push({ user: i, feature: 'getPosts', error: err.message });
     }
+  }
+
+  console.log('🛡️ Test Suite 6: Edge Case Fuzzing & Malformed Input Boundary Testing...');
+  const fuzzInputs = [
+    { name: '<script>alert("XSS")</script>', phone: '+91 99654 68185', course_name: 'DCA' },
+    { name: 'A'.repeat(500), phone: '063809 27568', message: 'B'.repeat(5000) },
+    { name: 'Special !@#$%^&*()_+ Chars', phone: '+91 99654 68185' }
+  ];
+
+  for (let f = 0; f < fuzzInputs.length; f++) {
+    totalInvocations++;
+    try {
+      const res = await dataService.createEnquiry(fuzzInputs[f]);
+      if (res && res.id) passCount++;
+      else errors.push({ user: `fuzz-${f}`, feature: 'fuzzing', error: 'Fuzzing payload failed to process' });
+    } catch (err) {
+      errors.push({ user: `fuzz-${f}`, feature: 'fuzzing', error: err.message });
+    }
+  }
+
+  console.log('📡 Test Suite 7: Testing Live Real-time Subscription Channel Lifecycle...');
+  totalInvocations += 3;
+  try {
+    const unSubEnquiries = dataService.subscribeToEnquiries(() => {});
+    const unSubReviews = dataService.subscribeToReviews(() => {});
+    const unSubSettings = dataService.subscribeToSettings(() => {});
+    
+    unSubEnquiries();
+    unSubReviews();
+    unSubSettings();
+    passCount += 3;
+  } catch (err) {
+    errors.push({ feature: 'subscribeLifecycle', error: err.message });
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(2);

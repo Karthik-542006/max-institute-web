@@ -31,7 +31,11 @@ export default function Contact({ settings }) {
   useEffect(() => {
     async function load() {
       const data = await dataService.getCourses();
-      setCourses(data.filter(c => c.is_active));
+      if (Array.isArray(data)) {
+        setCourses(data.filter(c => c && c.is_active));
+      } else {
+        setCourses([]);
+      }
     }
     load();
   }, []);
@@ -266,8 +270,8 @@ export default function Contact({ settings }) {
                         className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
                       >
                         <option value="">Choose a Program</option>
-                        {courses.map(c => (
-                          <option key={c.id} value={c.title}>{c.title}</option>
+                        {(courses || []).map(c => (
+                          <option key={c.id || c.title} value={c.title}>{c.title}</option>
                         ))}
                       </select>
                     </div>
