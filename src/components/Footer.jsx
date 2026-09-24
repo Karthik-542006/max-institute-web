@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 
 export default function Footer({ settings }) {
-  const phone = settings?.phone || '063809 27568';
+  const phone = settings?.phone || '+91 99654 68185';
+  const phone2 = settings?.phone2 || '+91 63809 27568';
   const email = settings?.email || 'contact@maxinstitute.edu.in';
   const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
   const closingTime = settings?.closing_time || '06:00 PM';
@@ -140,11 +141,16 @@ export default function Footer({ settings }) {
                 <MapPin className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{address}</span>
               </div>
-              <div className="flex items-center gap-2.5">
-                <Phone className="w-4 h-4 text-brand-accent shrink-0" />
-                <a href={`tel:${phone.replace(/\s+/g, '')}`} className="hover:text-white font-medium">
-                  {phone}
-                </a>
+              <div className="flex items-start gap-2.5">
+                <Phone className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-0.5">
+                  <a href={`tel:${phone.replace(/\s+/g, '')}`} className="hover:text-white font-medium">
+                    {phone}
+                  </a>
+                  <a href={`tel:${phone2.replace(/\s+/g, '')}`} className="hover:text-white font-medium">
+                    {phone2}
+                  </a>
+                </div>
               </div>
               <div className="flex items-center gap-2.5">
                 <Mail className="w-4 h-4 text-brand-accent shrink-0" />

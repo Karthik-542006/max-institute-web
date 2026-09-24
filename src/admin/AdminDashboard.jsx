@@ -48,6 +48,10 @@ export default function AdminDashboard() {
       setLoading(false);
     }
     loadDashboard();
+    const unsubscribe = dataService.subscribeToEnquiries(() => {
+      loadDashboard();
+    });
+    return () => unsubscribe();
   }, []);
 
   const statCards = [

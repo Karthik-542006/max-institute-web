@@ -9,6 +9,7 @@ export default function Settings() {
     institute_name: '',
     tagline: '',
     phone: '',
+    phone2: '',
     email: '',
     address: '',
     opening_time: '',
@@ -90,7 +91,7 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
-                Official Phone Number
+                Primary Phone Number
               </label>
               <input
                 type="text"
@@ -100,6 +101,21 @@ export default function Settings() {
                 className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
               />
             </div>
+            <div>
+              <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
+                Secondary Phone Number
+              </label>
+              <input
+                type="text"
+                value={form.phone2 || ''}
+                onChange={(e) => setForm({ ...form, phone2: e.target.value })}
+                placeholder="e.g. +91 63809 27568"
+                className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
                 Official Email Address

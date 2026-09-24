@@ -16,6 +16,13 @@ export default function ManageEnquiries() {
 
   useEffect(() => {
     loadEnquiries();
+    const unsubscribe = dataService.subscribeToEnquiries((detail) => {
+      loadEnquiries();
+      if (detail && detail.name) {
+        showToast(`🔔 New Enquiry Received from "${detail.name}"!`, 'info');
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadEnquiries() {

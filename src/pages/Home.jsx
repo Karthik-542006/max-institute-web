@@ -27,6 +27,8 @@ import GalleryCard from '../components/GalleryCard';
 import Modal from '../components/Modal';
 import Toast, { useToast } from '../components/Toast';
 
+import AnnouncementsBanner from '../components/AnnouncementsBanner';
+
 export default function Home({ settings }) {
   const [courses, setCourses] = useState([]);
   const [faculty, setFaculty] = useState([]);
@@ -162,6 +164,9 @@ export default function Home({ settings }) {
 
   return (
     <div className="flex flex-col">
+      {/* Active Admin Announcements & Notices Banner */}
+      <AnnouncementsBanner />
+
       {/* 1. HERO SECTION */}
       <section className="relative overflow-hidden bg-gradient-to-b from-blue-50/70 via-white to-brand-bg pt-12 pb-20 sm:pt-16 sm:pb-28 border-b border-brand-border/60">
         {/* Decorative background grid pattern */}
@@ -538,10 +543,10 @@ export default function Home({ settings }) {
                   <div>
                     <h4 className="text-sm font-bold text-brand-primary mb-0.5">Phone Number</h4>
                     <a
-                      href={`tel:${(settings?.phone || '063809 27568').replace(/\s+/g, '')}`}
+                      href={`tel:${(settings?.phone || '+91 99654 68185').replace(/\s+/g, '')}`}
                       className="text-sm font-bold text-brand-secondary hover:underline"
                     >
-                      {settings?.phone || '063809 27568'}
+                      {settings?.phone || '+91 99654 68185'}
                     </a>
                   </div>
                 </div>

@@ -121,7 +121,7 @@ export default function FAQ({ settings }) {
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <a href={`tel:${(settings?.phone || '063809 27568').replace(/\s+/g, '')}`}>
+              <a href={`tel:${(settings?.phone || '+91 99654 68185').replace(/\s+/g, '')}`}>
                 <Button variant="outline" size="sm" icon={Phone}>
                   Call Us
                 </Button>

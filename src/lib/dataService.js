@@ -9,22 +9,60 @@ const STORAGE_KEYS = {
   REVIEWS: 'max_reviews',
   ENQUIRIES: 'max_enquiries',
   FAQ: 'max_faq',
+  POSTS: 'max_posts',
 };
+
+const DEFAULT_POSTS = [
+  {
+    id: 'post-1',
+    title: 'Admissions Open for New Computer & Typing Batches!',
+    category: 'Admission Notice',
+    content: 'Enroll now for morning and evening batches in Basic Computer, MS Office, DCA, and English Typing (Junior & Senior). Special student discount available this month!',
+    image_url: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80',
+    action_label: 'Enquire Now',
+    action_link: '/contact',
+    is_active: true,
+    created_at: new Date().toISOString()
+  }
+];
+
+// Immediate Auto-Sanitization Script for local storage phone number persistence
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const raw = localStorage.getItem('max_site_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      let needsSave = false;
+      if (!parsed.phone || parsed.phone === '063809 27568' || parsed.phone.includes('063809')) {
+        parsed.phone = '+91 99654 68185';
+        needsSave = true;
+      }
+      if (!parsed.phone2 || parsed.phone2 === '063809 27568' || parsed.phone2 === '63809 27568') {
+        parsed.phone2 = '+91 63809 27568';
+        needsSave = true;
+      }
+      if (needsSave) {
+        localStorage.setItem('max_site_settings', JSON.stringify(parsed));
+      }
+    }
+  }
+} catch (e) {}
 
 // Initial Seed Data
 const DEFAULT_SETTINGS = {
   id: 'default-settings',
   institute_name: 'MAX Educational Institution',
   tagline: 'Empowering Students With Skills for Tomorrow',
-  phone: '063809 27568',
+  phone: '+91 99654 68185',
+  phone2: '+91 63809 27568',
   email: 'contact@maxinstitute.edu.in',
   address: '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   opening_time: '09:00 AM',
   closing_time: '06:00 PM',
   google_rating: 4.9,
   total_google_reviews: 110,
-  google_maps_url: 'https://maps.google.com/?q=Azhagiyamandapam+Tamil+Nadu',
-  google_maps_embed: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3948.337774780572!2d77.29177117565349!3d8.269151591765038!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04fe68846c4fa3%3A0xe5108b3e34bcf93f!2sAzhagiyamandapam%2C%20Tamil%20Nadu!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin'
+  google_maps_url: 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+  google_maps_embed: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin'
 };
 
 const DEFAULT_COURSES = [
@@ -350,7 +388,7 @@ const DEFAULT_FAQ = [
   {
     id: 'faq-3',
     question: 'How can I enquire or register for a course?',
-    answer: 'You can submit the online enquiry form on our website with your contact information, or call us directly at 063809 27568. Our team will reach out to explain batch schedules, curriculum, and admission details.',
+    answer: 'You can submit the online enquiry form on our website with your contact information, or call us directly at +91 99654 68185. Our team will reach out to explain batch schedules, curriculum, and admission details.',
     category: 'Admissions',
     display_order: 3,
     is_active: true
@@ -425,26 +463,47 @@ function isUUID(str) {
 export const dataService = {
   // SETTINGS
   async getSettings() {
+    let settings = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('site_settings').select('*').limit(1).maybeSingle();
         if (!error && data) {
-          setLocal(STORAGE_KEYS.SETTINGS, data);
-          return data;
+          settings = data;
         }
       } catch (e) {
         console.warn('Supabase fetch settings failed, falling back to local storage', e);
       }
     }
-    const res = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
-    if (res && res.address) {
-      if (res.address.includes('Near Nagercoil Bus Stop') || res.address.includes('Junction,')) {
-        res.address = res.address.replace(/,?\s*Near Nagercoil Bus Stop/g, '').replace(/,?\s*Junction/g, '').trim();
-        setLocal(STORAGE_KEYS.SETTINGS, res);
-        idbSet(STORAGE_KEYS.SETTINGS, res);
+    if (!settings) {
+      settings = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    }
+    
+    // Auto-Sanitization Script: Ensure phone & phone2 formatting in perfect order
+    let modified = false;
+    if (!settings) {
+      settings = { ...DEFAULT_SETTINGS };
+      modified = true;
+    }
+    if (!settings.phone || settings.phone === '063809 27568' || settings.phone.includes('063809')) {
+      settings.phone = '+91 99654 68185';
+      modified = true;
+    }
+    if (!settings.phone2 || settings.phone2 === '063809 27568' || settings.phone2 === '63809 27568') {
+      settings.phone2 = '+91 63809 27568';
+      modified = true;
+    }
+    if (settings.address && (settings.address.includes('Near Nagercoil Bus Stop') || settings.address.includes('Junction,'))) {
+      settings.address = settings.address.replace(/,?\s*Near Nagercoil Bus Stop/g, '').replace(/,?\s*Junction/g, '').trim();
+      modified = true;
+    }
+    if (modified) {
+      setLocal(STORAGE_KEYS.SETTINGS, settings);
+      idbSet(STORAGE_KEYS.SETTINGS, settings);
+      if (isSupabaseConfigured && supabase && settings.id && settings.id !== 'default-settings') {
+        supabase.from('site_settings').upsert({ id: settings.id, phone: '+91 99654 68185', phone2: '+91 63809 27568' }).catch(() => {});
       }
     }
-    return res;
+    return settings;
   },
 
   async updateSettings(updates) {
@@ -663,6 +722,7 @@ export const dataService = {
           const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
           const replaced = latestLocal.map(x => (String(x.id) === String(newMember.id) ? data : x));
           setLocal(STORAGE_KEYS.FACULTY, replaced);
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
           return data;
         } else if (error) {
           console.warn('Supabase addFaculty notice:', error.message || error);
@@ -672,6 +732,7 @@ export const dataService = {
       }
     }
 
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
     return newMember;
   },
 
@@ -689,6 +750,7 @@ export const dataService = {
             const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
             const replaced = latestLocal.map(x => (String(x.id) === stringId ? { ...x, ...data } : x));
             setLocal(STORAGE_KEYS.FACULTY, replaced);
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
             return data;
           }
         }
@@ -697,6 +759,7 @@ export const dataService = {
       }
     }
 
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
     return updatedLocal.find(f => String(f.id) === stringId);
   },
 
@@ -723,6 +786,7 @@ export const dataService = {
       }
     }
 
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
     return true;
   },
 
@@ -947,7 +1011,78 @@ export const dataService = {
     return true;
   },
 
-  // ENQUIRIES
+  // ENQUIRIES & REAL-TIME MULTI-DEVICE SYNC
+  subscribeToEnquiries(callback) {
+    const handleLocal = (e) => callback(e.detail || null);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('max_enquiry_submitted', handleLocal);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('max_enquiries_sync_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'ENQUIRY_CHANGED') {
+            callback(event.data.detail || null);
+          }
+        };
+      } catch (err) {
+        console.warn('BroadcastChannel subscription failed', err);
+      }
+    }
+
+    let supabaseSub = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        supabaseSub = supabase
+          .channel('public:enquiries:realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'enquiries' },
+            (payload) => {
+              callback(payload.new || payload.old || null);
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn('Supabase realtime subscription error', err);
+      }
+    }
+
+    // Backup polling every 8 seconds across devices
+    const pollTimer = setInterval(() => {
+      callback(null);
+    }, 8000);
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('max_enquiry_submitted', handleLocal);
+      }
+      if (channel) {
+        try { channel.close(); } catch (e) {}
+      }
+      if (supabaseSub && supabase) {
+        try { supabase.removeChannel(supabaseSub); } catch (e) {}
+      }
+      clearInterval(pollTimer);
+    };
+  },
+
+  broadcastEnquiryChange(detail = null) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_enquiry_submitted', { detail }));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_enquiries_sync_channel');
+        bc.postMessage({ type: 'ENQUIRY_CHANGED', detail });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
   async getEnquiries() {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -961,31 +1096,42 @@ export const dataService = {
   },
 
   async createEnquiry(enquiry) {
+    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `enq-${Date.now()}`;
     const newEnq = {
       ...enquiry,
-      id: `enq-${Date.now()}`,
-      status: 'New',
-      created_at: new Date().toISOString()
+      id: defaultId,
+      status: enquiry.status || 'New',
+      created_at: enquiry.created_at || new Date().toISOString()
     };
+    let result = newEnq;
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('enquiries').insert(newEnq).select().single();
-        if (!error && data) return data;
+        const insertPayload = { ...newEnq };
+        if (insertPayload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(insertPayload.id)) {
+          delete insertPayload.id;
+        }
+        const { data, error } = await supabase.from('enquiries').insert(insertPayload).select().single();
+        if (!error && data) result = data;
+        else if (error) console.warn('Supabase createEnquiry error:', error);
       } catch (e) {
         console.warn('Supabase createEnquiry failed, saving locally', e);
       }
     }
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const updated = [newEnq, ...list];
+    const updated = [result, ...list.filter(item => item.id !== result.id)];
     setLocal(STORAGE_KEYS.ENQUIRIES, updated);
-    return newEnq;
+    this.broadcastEnquiryChange(result);
+    return result;
   },
 
   async updateEnquiryStatus(id, status) {
+    let result = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('enquiries').update({ status }).eq('id', id).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          result = data;
+        }
       } catch (e) {
         console.warn('Supabase updateEnquiryStatus failed', e);
       }
@@ -993,6 +1139,7 @@ export const dataService = {
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
     const updated = list.map(e => (e.id === id ? { ...e, status } : e));
     setLocal(STORAGE_KEYS.ENQUIRIES, updated);
+    this.broadcastEnquiryChange(result || { id, status });
     return updated.find(e => e.id === id);
   },
 
@@ -1007,6 +1154,7 @@ export const dataService = {
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
     const filtered = list.filter(e => e.id !== id);
     setLocal(STORAGE_KEYS.ENQUIRIES, filtered);
+    this.broadcastEnquiryChange({ id, deleted: true });
     return true;
   },
 
@@ -1072,6 +1220,122 @@ export const dataService = {
     const list = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
     const filtered = list.filter(f => f.id !== id);
     setLocal(STORAGE_KEYS.FAQ, filtered);
+    return true;
+  },
+
+  // ANNOUNCEMENTS / POSTS WITH TIME SCHEDULING
+  async getPosts() {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          setLocal(STORAGE_KEYS.POSTS, data);
+          return data;
+        }
+      } catch (e) {
+        console.warn('Supabase getPosts failed, using local fallback', e);
+      }
+    }
+    return getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+  },
+
+  async getPublicAnnouncements() {
+    const list = await this.getPosts();
+    const now = new Date();
+    return list.filter(post => {
+      if (!post.is_active) return false;
+      if (post.start_time) {
+        const start = new Date(post.start_time);
+        if (now < start) return false;
+      }
+      if (post.end_time) {
+        const end = new Date(post.end_time);
+        if (now > end) return false;
+      }
+      return true;
+    });
+  },
+
+  broadcastPostsChange() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_posts_updated'));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_posts_sync_channel');
+        bc.postMessage({ type: 'POSTS_CHANGED' });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
+  async addPost(post) {
+    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `post-${Date.now()}`;
+    const newPost = {
+      ...post,
+      id: defaultId,
+      is_active: post.is_active ?? true,
+      start_time: post.start_time || null,
+      end_time: post.end_time || null,
+      created_at: post.created_at || new Date().toISOString()
+    };
+    let result = newPost;
+    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const insertPayload = { ...newPost };
+        if (insertPayload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(insertPayload.id)) {
+          delete insertPayload.id;
+        }
+        const { data, error } = await supabase.from('posts').insert(insertPayload).select().single();
+        if (!error && data) {
+          result = data;
+        } else if (error) {
+          console.warn('Supabase addPost error:', error);
+        }
+      } catch (e) {
+        console.warn('Supabase addPost failed', e);
+      }
+    }
+    const updated = [result, ...list.filter(p => String(p.id) !== String(result.id))];
+    setLocal(STORAGE_KEYS.POSTS, updated);
+    this.broadcastPostsChange();
+    return result;
+  },
+
+  async updatePost(id, updates) {
+    let result = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('posts').update(updates).eq('id', id).select().single();
+        if (!error && data) {
+          result = data;
+        }
+      } catch (e) {
+        console.warn('Supabase updatePost failed', e);
+      }
+    }
+    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+    const updated = list.map(p => (String(p.id) === String(id) ? { ...p, ...updates, ...(result || {}) } : p));
+    setLocal(STORAGE_KEYS.POSTS, updated);
+    this.broadcastPostsChange();
+    return updated.find(p => String(p.id) === String(id));
+  },
+
+  async deletePost(id) {
+    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+    const filtered = list.filter(p => String(p.id) !== String(id));
+    setLocal(STORAGE_KEYS.POSTS, filtered);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('posts').delete().eq('id', id);
+      } catch (e) {
+        console.warn('Supabase deletePost failed', e);
+      }
+    }
+    this.broadcastPostsChange();
     return true;
   }
 };

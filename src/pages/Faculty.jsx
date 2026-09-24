@@ -23,9 +23,12 @@ export default function Faculty() {
     async function load() {
       const data = await dataService.getFaculty();
       const activeFaculty = data.filter(f => f.is_active);
-      setFaculty(activeFaculty.length > 0 ? activeFaculty : data);
+      setFaculty(activeFaculty);
     }
     load();
+    const handleUpdate = () => load();
+    window.addEventListener('max_faculty_updated', handleUpdate);
+    return () => window.removeEventListener('max_faculty_updated', handleUpdate);
   }, []);
 
   return (
@@ -49,15 +52,25 @@ export default function Faculty() {
       {/* Faculty Cards Grid */}
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {faculty.map((member) => (
-              <FacultyCard
-                key={member.id}
-                faculty={member}
-                onSelect={(f) => setSelectedFaculty(f)}
-              />
-            ))}
-          </div>
+          {faculty.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {faculty.map((member) => (
+                <FacultyCard
+                  key={member.id}
+                  faculty={member}
+                  onSelect={(f) => setSelectedFaculty(f)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-brand-bg/50 rounded-3xl border border-brand-border">
+              <Users className="w-12 h-12 text-brand-muted/40 mx-auto mb-3" />
+              <h3 className="text-lg font-bold text-brand-primary">Our Faculty Roster is Being Updated</h3>
+              <p className="text-xs sm:text-sm text-brand-muted max-w-md mx-auto mt-1">
+                Please check back soon or contact our administration directly for instructor details.
+              </p>
+            </div>
+          )}
 
           {/* Institutional Commitment Banner */}
           <div className="mt-16 bg-brand-bg rounded-3xl p-8 sm:p-10 border border-brand-border flex flex-col md:flex-row items-center justify-between gap-6">

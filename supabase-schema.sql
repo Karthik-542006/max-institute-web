@@ -12,15 +12,16 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   institute_name TEXT NOT NULL DEFAULT 'MAX Educational Institution',
   tagline TEXT NOT NULL DEFAULT 'Empowering Students With Skills for Tomorrow',
-  phone TEXT NOT NULL DEFAULT '063809 27568',
+  phone TEXT NOT NULL DEFAULT '+91 99654 68185',
+  phone2 TEXT DEFAULT '+91 63809 27568',
   email TEXT DEFAULT 'contact@maxinstitute.edu.in',
   address TEXT NOT NULL DEFAULT '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   opening_time TEXT NOT NULL DEFAULT '09:00 AM',
   closing_time TEXT NOT NULL DEFAULT '06:00 PM',
   google_rating NUMERIC(2,1) DEFAULT 4.9,
   total_google_reviews INTEGER DEFAULT 110,
-  google_maps_url TEXT DEFAULT 'https://maps.google.com/?q=Azhagiyamandapam+Tamil+Nadu',
-  google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3948.337774780572!2d77.29177117565349!3d8.269151591765038!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04fe68846c4fa3%3A0xe5108b3e34bcf93f!2sAzhagiyamandapam%2C%20Tamil%20Nadu!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin',
+  google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+  google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin',
   logo_url TEXT,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -113,6 +114,21 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 9. ANNOUNCEMENTS / POSTS TABLE
+CREATE TABLE IF NOT EXISTS public.posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  category TEXT DEFAULT 'Admission Notice',
+  content TEXT NOT NULL,
+  image_url TEXT,
+  action_label TEXT DEFAULT 'Enquire Now',
+  action_link TEXT DEFAULT '/contact',
+  is_active BOOLEAN DEFAULT true,
+  start_time TIMESTAMP WITH TIME ZONE,
+  end_time TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- Enabling public read and write access for anonymous & authenticated users
@@ -126,6 +142,7 @@ ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.enquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faq ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if present
 DROP POLICY IF EXISTS "Public full access to site_settings" ON public.site_settings;
@@ -136,16 +153,22 @@ DROP POLICY IF EXISTS "Public full access to reviews" ON public.reviews;
 DROP POLICY IF EXISTS "Public full access to enquiries" ON public.enquiries;
 DROP POLICY IF EXISTS "Public full access to faq" ON public.faq;
 DROP POLICY IF EXISTS "Public full access to profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Public full access to posts" ON public.posts;
 
--- Create open policies for seamless public viewing and administration
-CREATE POLICY "Public full access to site_settings" ON public.site_settings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to courses" ON public.courses FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to faculty" ON public.faculty FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to gallery" ON public.gallery FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to reviews" ON public.reviews FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to enquiries" ON public.enquiries FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to faq" ON public.faq FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+-- Create open policies for seamless public viewing and administration across anon and authenticated roles
+CREATE POLICY "Public full access to site_settings" ON public.site_settings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to courses" ON public.courses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to faculty" ON public.faculty FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to gallery" ON public.gallery FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to reviews" ON public.reviews FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to enquiries" ON public.enquiries FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to faq" ON public.faq FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to profiles" ON public.profiles FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public full access to posts" ON public.posts FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- Enable Realtime Broadcasting for Enquiries & Announcements across all admin devices
+ALTER PUBLICATION supabase_realtime ADD TABLE public.enquiries;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
 
 -- ==============================================================================
 -- STORAGE BUCKET CONFIGURATION & POLICIES
@@ -180,7 +203,7 @@ INSERT INTO public.site_settings (institute_name, tagline, phone, email, address
 VALUES (
   'MAX Educational Institution',
   'Empowering Students With Skills for Tomorrow',
-  '063809 27568',
+  '+91 99654 68185',
   'contact@maxinstitute.edu.in',
   '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   '09:00 AM',
@@ -226,7 +249,7 @@ INSERT INTO public.faq (question, answer, category, display_order)
 VALUES
   ('What courses are available at MAX Educational Institution?', 'MAX offers professional computer education including Basic Computer Training, MS Office Mastery, Diploma in Computer Applications (DCA), Programming Fundamentals, English & Tamil Touch Typing (Junior & Senior), Speed Development, and Technical Fundamentals.', 'Courses', 1),
   ('Where is MAX Educational Institution located?', 'We are located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167.', 'General', 2),
-  ('How can I enquire or register for a course?', 'You can submit the online enquiry form on our website with your contact information, or call us directly at 063809 27568. Our team will reach out to explain batch schedules, curriculum, and admission details.', 'Admissions', 3),
+  ('How can I enquire or register for a course?', 'You can submit the online enquiry form on our website with your contact information, or call us directly at +91 99654 68185. Our team will reach out to explain batch schedules, curriculum, and admission details.', 'Admissions', 3),
   ('Can I visit the institute and see the labs before enrolling?', 'Absolutely. Prospective students and parents are warmly invited to visit our center between 09:00 AM and 06:00 PM Monday through Saturday to see our computer lab, interact with the instructors, and test typing equipment.', 'General', 4),
   ('Are class timings flexible for college students and working professionals?', 'Yes! We offer morning, afternoon, and evening batches with flexible timing options to suit the daily schedules of school pupils, college students, and working individuals.', 'Courses', 5)
 ON CONFLICT DO NOTHING;

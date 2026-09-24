@@ -15,7 +15,8 @@ import {
   X, 
   GraduationCap,
   ChevronRight,
-  Shield
+  Shield,
+  Megaphone
 } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 
@@ -39,6 +40,7 @@ export default function AdminLayout() {
 
   const navItems = [
     { name: 'Overview', path: '/admin', icon: LayoutDashboard, exact: true },
+    { name: 'Announcements', path: '/admin/posts', icon: Megaphone },
     { name: 'Courses', path: '/admin/courses', icon: BookOpen },
     { name: 'Faculty', path: '/admin/faculty', icon: Users },
     { name: 'Gallery', path: '/admin/gallery', icon: ImageIcon },

@@ -42,7 +42,7 @@ export default function Navbar({ settings }) {
     { name: 'Contact', path: '/contact' }
   ];
 
-  const phone = settings?.phone || '063809 27568';
+  const phone = settings?.phone || '+91 99654 68185';
   const hours = settings?.closing_time ? `Open until ${settings.closing_time}` : 'Open until 6:00 PM';
 
   return (

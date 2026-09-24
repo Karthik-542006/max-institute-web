@@ -6,6 +6,7 @@ import { dataService } from './lib/dataService';
 // Public Components
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import AnnouncementBanner from './components/AnnouncementBanner';
 
 // Public Pages
 import Home from './pages/Home';
@@ -27,6 +28,7 @@ import ManageGallery from './admin/ManageGallery';
 import ManageReviews from './admin/ManageReviews';
 import ManageEnquiries from './admin/ManageEnquiries';
 import ManageFAQ from './admin/ManageFAQ';
+import ManagePosts from './admin/ManagePosts';
 import Settings from './admin/Settings';
 
 // Scroll to top helper on route navigation
@@ -68,6 +70,7 @@ export default function App() {
           <Route path="reviews" element={<ManageReviews />} />
           <Route path="enquiries" element={<ManageEnquiries />} />
           <Route path="faq" element={<ManageFAQ />} />
+          <Route path="posts" element={<ManagePosts />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 
@@ -76,6 +79,7 @@ export default function App() {
           path="*"
           element={
             <div className="min-h-screen flex flex-col justify-between">
+              <AnnouncementBanner />
               <Navbar settings={settings} />
               <div className="flex-1">
                 <Routes>

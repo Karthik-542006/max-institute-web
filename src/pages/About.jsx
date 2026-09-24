@@ -216,9 +216,9 @@ export default function About({ settings }) {
                 Plan a Visit or Send Enquiry
               </Button>
             </Link>
-            <a href={`tel:${(settings?.phone || '063809 27568').replace(/\s+/g, '')}`}>
+            <a href={`tel:${(settings?.phone || '+91 99654 68185').replace(/\s+/g, '')}`}>
               <Button variant="outline" size="md">
-                Call {settings?.phone || '063809 27568'}
+                Call {settings?.phone || '+91 99654 68185'}
               </Button>
             </a>
           </div>
