@@ -21,6 +21,10 @@ export default function ManageReviews() {
 
   useEffect(() => {
     loadReviews();
+    const unsubscribe = dataService.subscribeToReviews(() => {
+      loadReviews();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadReviews() {

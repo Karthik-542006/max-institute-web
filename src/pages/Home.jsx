@@ -69,6 +69,13 @@ export default function Home({ settings }) {
       setFaq(faqData.filter(q => q.is_active));
     }
     loadData();
+
+    const unsubscribe = dataService.subscribeToReviews(async () => {
+      const reviewsData = await dataService.getReviews();
+      setReviews(reviewsData.filter(r => r.is_featured));
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleEnquirySubmit = async (e) => {

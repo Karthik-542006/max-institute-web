@@ -940,53 +940,137 @@ export const dataService = {
     return true;
   },
 
-  // REVIEWS
+  // REVIEWS & REAL-TIME MULTI-DEVICE SYNC ALGORITHM
+  broadcastReviewChange(detail = null) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_review_changed', { detail }));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_reviews_sync_channel');
+        bc.postMessage({ type: 'REVIEW_CHANGED', detail });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
+  subscribeToReviews(callback) {
+    const handleLocal = (e) => callback(e.detail || null);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('max_review_changed', handleLocal);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('max_reviews_sync_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'REVIEW_CHANGED') {
+            callback(event.data.detail);
+          }
+        };
+      } catch (e) {}
+    }
+
+    let supabaseChannel = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        supabaseChannel = supabase
+          .channel('public:reviews:realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'reviews' },
+            (payload) => {
+              callback(payload.new || payload.old || payload);
+            }
+          )
+          .subscribe();
+      } catch (e) {
+        console.warn('Supabase reviews realtime subscription failed:', e);
+      }
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('max_review_changed', handleLocal);
+      }
+      if (channel) channel.close();
+      if (supabaseChannel && supabase) {
+        supabase.removeChannel(supabaseChannel);
+      }
+    };
+  },
+
   async getReviews() {
+    let list = [];
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('reviews').select('*').order('created_at', { ascending: false });
         if (!error && data) {
-          if (data.length > 0) setLocal(STORAGE_KEYS.REVIEWS, data);
-          return data;
+          list = data;
         }
       } catch (e) {
         console.warn('Supabase reviews failed', e);
       }
     }
-    return getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
+    if (!list || list.length === 0) {
+      list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
+    }
+
+    // Ranking algorithm: Featured (Admin priority) -> Rating (5 to 1) -> Newest Date
+    const sorted = [...list].sort((a, b) => {
+      const featA = a.is_featured ? 1 : 0;
+      const featB = b.is_featured ? 1 : 0;
+      if (featA !== featB) return featB - featA;
+
+      const rateA = Number(a.rating || 5);
+      const rateB = Number(b.rating || 5);
+      if (rateA !== rateB) return rateB - rateA;
+
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+
+    setLocal(STORAGE_KEYS.REVIEWS, sorted);
+    return sorted;
   },
 
   async addReview(review) {
+    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `rev-${Date.now()}`;
     const newRev = {
       ...review,
-      id: review.id || `rev-${Date.now()}`,
+      id: review.id || defaultId,
       source: review.source || 'Direct Submission',
       is_featured: review.is_featured ?? true,
-      created_at: new Date().toISOString()
+      created_at: review.created_at || new Date().toISOString()
     };
+    let result = newRev;
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('reviews').insert(newRev).select().single();
-        if (!error && data) {
-          const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
-          setLocal(STORAGE_KEYS.REVIEWS, [data, ...list]);
-          return data;
+        const payload = { ...newRev };
+        if (payload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.id)) {
+          delete payload.id;
         }
+        const { data, error } = await supabase.from('reviews').insert(payload).select().single();
+        if (!error && data) result = data;
+        else if (error) console.warn('Supabase addReview error:', error);
       } catch (e) {
-        console.warn('Supabase addReview failed', e);
+        console.warn('Supabase addReview failed, saving locally', e);
       }
     }
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
-    const updated = [newRev, ...list];
+    const updated = [result, ...list.filter(r => r.id !== result.id)];
     setLocal(STORAGE_KEYS.REVIEWS, updated);
-    return newRev;
+    this.broadcastReviewChange(result);
+    return result;
   },
 
   async updateReview(id, updates) {
+    let result = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('reviews').update(updates).eq('id', id).select().single();
-        if (!error && data) return data;
+        if (!error && data) result = data;
       } catch (e) {
         console.warn('Supabase updateReview failed', e);
       }
@@ -994,6 +1078,7 @@ export const dataService = {
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
     const updated = list.map(r => (r.id === id ? { ...r, ...updates } : r));
     setLocal(STORAGE_KEYS.REVIEWS, updated);
+    this.broadcastReviewChange(result || { id, ...updates });
     return updated.find(r => r.id === id);
   },
 
@@ -1008,6 +1093,7 @@ export const dataService = {
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
     const filtered = list.filter(r => r.id !== id);
     setLocal(STORAGE_KEYS.REVIEWS, filtered);
+    this.broadcastReviewChange({ id, deleted: true });
     return true;
   },
 
