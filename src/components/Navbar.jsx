@@ -42,8 +42,29 @@ export default function Navbar({ settings }) {
     { name: 'Contact', path: '/contact' }
   ];
 
-  const phone = settings?.phone || '+91 99654 68185';
-  const hours = settings?.closing_time ? `Open until ${settings.closing_time}` : 'Open until 6:00 PM';
+  const [liveSettings, setLiveSettings] = useState(settings);
+
+  useEffect(() => {
+    setLiveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    async function loadSettings() {
+      const data = await dataService.getSettings();
+      setLiveSettings(data);
+    }
+    loadSettings();
+    const unsubscribe = dataService.subscribeToSettings(() => {
+      loadSettings();
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const activeSettings = liveSettings || settings;
+  const phone = activeSettings?.phone || '+91 99654 68185';
+  const openingTime = activeSettings?.opening_time || '09:00 AM';
+  const closingTime = activeSettings?.closing_time || '06:00 PM';
+  const hours = `${openingTime} – ${closingTime}`;
 
   return (
     <header className="sticky top-0 z-40 w-full transition-all duration-300">

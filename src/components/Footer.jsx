@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   GraduationCap, 
@@ -10,15 +10,36 @@ import {
   ArrowRight,
   ShieldCheck
 } from 'lucide-react';
+import { dataService } from '../lib/dataService';
 
 export default function Footer({ settings }) {
-  const phone = settings?.phone || '+91 99654 68185';
-  const phone2 = settings?.phone2 || '+91 63809 27568';
-  const email = settings?.email || 'contact@maxinstitute.edu.in';
-  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
-  const closingTime = settings?.closing_time || '06:00 PM';
-  const rating = settings?.google_rating || 4.9;
-  const reviewCount = settings?.total_google_reviews || 110;
+  const [liveSettings, setLiveSettings] = useState(settings);
+
+  useEffect(() => {
+    setLiveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    async function loadSettings() {
+      const data = await dataService.getSettings();
+      setLiveSettings(data);
+    }
+    loadSettings();
+    const unsubscribe = dataService.subscribeToSettings(() => {
+      loadSettings();
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const activeSettings = liveSettings || settings;
+  const phone = activeSettings?.phone || '+91 99654 68185';
+  const phone2 = activeSettings?.phone2 || '+91 63809 27568';
+  const email = activeSettings?.email || 'contact@maxinstitute.edu.in';
+  const address = activeSettings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
+  const openingTime = activeSettings?.opening_time || '09:00 AM';
+  const closingTime = activeSettings?.closing_time || '06:00 PM';
+  const rating = activeSettings?.google_rating || 4.9;
+  const reviewCount = activeSettings?.total_google_reviews || 110;
 
   return (
     <footer className="bg-brand-primary text-slate-300 pt-16 pb-12 border-t border-brand-primary/40 mt-auto">

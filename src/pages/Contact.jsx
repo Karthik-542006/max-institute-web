@@ -71,13 +71,33 @@ export default function Contact({ settings }) {
     }
   };
 
-  const phone = settings?.phone || '+91 99654 68185';
-  const phone2 = settings?.phone2 || '+91 63809 27568';
-  const email = settings?.email || 'contact@maxinstitute.edu.in';
-  const address = settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
-  const closingTime = settings?.closing_time || '06:00 PM';
-  const mapEmbedUrl = settings?.google_maps_embed || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin';
-  const mapDirectUrl = settings?.google_maps_url || 'https://maps.app.goo.gl/Py3cme7zBE4aBK777';
+  const [liveSettings, setLiveSettings] = useState(settings);
+
+  useEffect(() => {
+    setLiveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    async function loadSettings() {
+      const data = await dataService.getSettings();
+      setLiveSettings(data);
+    }
+    loadSettings();
+    const unsubscribe = dataService.subscribeToSettings(() => {
+      loadSettings();
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const activeSettings = liveSettings || settings;
+  const phone = activeSettings?.phone || '+91 99654 68185';
+  const phone2 = activeSettings?.phone2 || '+91 63809 27568';
+  const email = activeSettings?.email || 'contact@maxinstitute.edu.in';
+  const address = activeSettings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
+  const openingTime = activeSettings?.opening_time || '09:00 AM';
+  const closingTime = activeSettings?.closing_time || '06:00 PM';
+  const mapEmbedUrl = activeSettings?.google_maps_embed || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin';
+  const mapDirectUrl = activeSettings?.google_maps_url || 'https://maps.app.goo.gl/Py3cme7zBE4aBK777';
 
   return (
     <div className="py-12 flex flex-col">
@@ -158,7 +178,7 @@ export default function Contact({ settings }) {
                   <div>
                     <h4 className="text-xs font-bold text-brand-primary">Daily Working Hours</h4>
                     <p className="text-xs sm:text-sm text-brand-muted">
-                      Monday to Saturday • Open until {closingTime}
+                      Monday to Saturday • {openingTime} – {closingTime}
                     </p>
                   </div>
                 </div>
