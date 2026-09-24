@@ -53,16 +53,13 @@ export default function Settings() {
             Site & Institutional Settings
           </h1>
           <p className="text-xs sm:text-sm text-brand-muted mt-0.5">
-            Update institutional name, phone number, address, timings, and map embeds live across the entire website
+            Update contact details, campus address, timings, rating, review counts, and map embeds live across the entire website
           </p>
         </div>
       </div>
 
       <div className="bg-white rounded-3xl p-6 sm:p-10 border border-brand-border shadow-soft">
         <form onSubmit={handleSubmit} className="space-y-6">
-          
-
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
