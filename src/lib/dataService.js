@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { idbGet, idbSet, idbDel } from './idb.js';
+import { deleteStorageFile } from './mediaUpload.js';
 
 const STORAGE_KEYS = {
   SETTINGS: 'max_site_settings',
@@ -862,7 +863,86 @@ export const dataService = {
     return true;
   },
 
-  // GALLERY (Supports 1000+ images with IndexedDB & Supabase Sync)
+  // AUDIT LOGGING HELPER FOR MULTIPLE SYSTEM ADMINS
+  async logAdminActivity(action, tableName = null, recordId = null, oldData = null, newData = null) {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const session = await supabase.auth.getSession();
+        const user = session?.data?.session?.user;
+        const payload = {
+          admin_id: user?.id || 'system-admin',
+          admin_email: user?.email || 'Admin@2006',
+          action: String(action),
+          table_name: tableName,
+          record_id: recordId ? String(recordId) : null,
+          old_data: oldData ? JSON.parse(JSON.stringify(oldData)) : null,
+          new_data: newData ? JSON.parse(JSON.stringify(newData)) : null,
+          created_at: new Date().toISOString()
+        };
+        await supabase.from('admin_activity_log').insert(payload).catch(() => {});
+      } catch (e) {}
+    }
+  },
+
+  // GALLERY REALTIME & MULTI-ADMIN SYNC
+  broadcastGalleryChange(detail = null) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_gallery_updated', { detail }));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_gallery_sync_channel');
+        bc.postMessage({ type: 'GALLERY_CHANGED', detail });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
+  subscribeToGallery(callback) {
+    const handleLocal = () => callback();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('max_gallery_updated', handleLocal);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('max_gallery_sync_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'GALLERY_CHANGED') {
+            callback();
+          }
+        };
+      } catch (e) {}
+    }
+
+    let supabaseChannel = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        supabaseChannel = supabase
+          .channel('public:gallery:realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'gallery' },
+            () => callback()
+          )
+          .subscribe();
+      } catch (e) {}
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('max_gallery_updated', handleLocal);
+      }
+      if (channel) channel.close();
+      if (supabaseChannel && supabase) {
+        supabase.removeChannel(supabaseChannel);
+      }
+    };
+  },
+
+  // GALLERY (Supports Images, Videos, 1000+ Items with IndexedDB & Supabase Sync)
   async getGallery(category = 'All') {
     const deletedIds = new Set(getLocal('max_gallery_deleted_ids', []).map(String));
     let items = null;
@@ -917,10 +997,24 @@ export const dataService = {
         ? item.id
         : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `gal-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`);
 
+      const fileUrl = item.file_url || item.image_url || '';
+      const imageUrl = item.image_url || fileUrl;
+
       return {
         ...item,
         id: newId,
+        media_type: item.media_type || (fileUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ? 'video' : 'image'),
+        file_url: fileUrl,
+        image_url: imageUrl,
+        thumbnail_url: item.thumbnail_url || imageUrl,
+        storage_path: item.storage_path || null,
+        file_name: item.file_name || null,
+        file_size: item.file_size || null,
+        mime_type: item.mime_type || null,
+        category: item.category || 'Institute',
+        is_published: item.is_published !== false,
         is_featured: item.is_featured ?? true,
+        uploaded_by: item.uploaded_by || 'admin',
         created_at: item.created_at || new Date(Date.now() - idx * 100).toISOString()
       };
     });
@@ -942,7 +1036,7 @@ export const dataService = {
     const filteredDeleted = deletedIds.filter(id => !addedIdsSet.has(String(id)));
     setLocal('max_gallery_deleted_ids', filteredDeleted);
 
-    // 2. Batch insert into Supabase if configured (in chunks of 50 for max performance)
+    // 2. Batch insert into Supabase if configured
     if (isSupabaseConfigured && supabase) {
       try {
         const CHUNK_SIZE = 50;
@@ -960,6 +1054,12 @@ export const dataService = {
             insertedFromSupabase.push(...data);
           } else if (error) {
             console.warn('Supabase batch insert notice:', error.message || error);
+            // Storage cleanup on DB insert failure
+            for (const failedItem of chunk) {
+              if (failedItem.storage_path) {
+                deleteStorageFile('gallery', failedItem.storage_path).catch(() => {});
+              }
+            }
           }
         }
 
@@ -974,7 +1074,40 @@ export const dataService = {
       }
     }
 
+    this.logAdminActivity('UPLOADED_GALLERY_MEDIA', 'gallery', formattedItems.map(i => i.id).join(','), null, formattedItems);
+    this.broadcastGalleryChange(formattedItems);
     return formattedItems;
+  },
+
+  async updateGalleryItem(id, updates) {
+    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const target = currentLocal.find(g => String(g.id) === String(id));
+    if (!target) return null;
+
+    const merged = { ...target, ...updates, updated_at: new Date().toISOString() };
+
+    const updatedList = currentLocal.map(g => (String(g.id) === String(id) ? merged : g));
+    await setStored(STORAGE_KEYS.GALLERY, updatedList);
+
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      try {
+        const { data, error } = await supabase.from('gallery').update(updates).eq('id', id).select().single();
+        if (!error && data) {
+          const replaced = updatedList.map(g => (String(g.id) === String(id) ? data : g));
+          await setStored(STORAGE_KEYS.GALLERY, replaced);
+        }
+      } catch (e) {
+        console.warn('Supabase updateGalleryItem failed', e);
+      }
+    }
+
+    const actionName = updates.is_published !== undefined 
+      ? (updates.is_published ? 'PUBLISHED_GALLERY_MEDIA' : 'UNPUBLISHED_GALLERY_MEDIA')
+      : 'UPDATED_GALLERY_MEDIA';
+
+    this.logAdminActivity(actionName, 'gallery', id, target, merged);
+    this.broadcastGalleryChange(merged);
+    return merged;
   },
 
   async deleteGalleryItem(id) {
@@ -988,6 +1121,7 @@ export const dataService = {
 
     // 1. Delete from local IndexedDB & LocalStorage
     const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const itemsToDelete = currentLocal.filter(g => idsSet.has(String(g.id)));
     const filteredLocal = currentLocal.filter(g => !idsSet.has(String(g.id)));
     await setStored(STORAGE_KEYS.GALLERY, filteredLocal);
 
@@ -996,7 +1130,13 @@ export const dataService = {
     const updatedDeleted = Array.from(new Set([...deletedIds, ...idsArray.map(String)]));
     setLocal('max_gallery_deleted_ids', updatedDeleted);
 
-    // 3. Batch delete from Supabase if configured & valid UUIDs
+    // 3. Delete files from Storage & records from Supabase DB
+    for (const item of itemsToDelete) {
+      if (item.storage_path) {
+        deleteStorageFile('gallery', item.storage_path).catch(() => {});
+      }
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         const validUUIDs = idsArray.filter(isUUID);
@@ -1009,6 +1149,8 @@ export const dataService = {
       }
     }
 
+    this.logAdminActivity('DELETED_GALLERY_MEDIA', 'gallery', idsArray.join(','), itemsToDelete, null);
+    this.broadcastGalleryChange(idsArray);
     return true;
   },
 

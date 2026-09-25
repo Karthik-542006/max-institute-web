@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Image as ImageIcon, 
+  Video as VideoIcon,
   Plus, 
   Trash2, 
   Star, 
@@ -14,10 +15,14 @@ import {
   Filter, 
   Layers, 
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Play
 } from 'lucide-react';
 import { dataService } from '../lib/dataService';
-import { uploadImage, getImagePreview, MAX_FILE_SIZE } from '../lib/imageUpload';
+import { validateMediaFile, uploadMedia, getMediaPreview } from '../lib/mediaUpload';
+import CameraCaptureModal from '../components/CameraCaptureModal';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import Toast, { useToast } from '../components/Toast';
@@ -28,7 +33,9 @@ const PAGE_SIZE = 18;
 export default function ManageGallery() {
   const [gallery, setGallery] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'published' | 'unpublished'
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
@@ -39,29 +46,35 @@ export default function ManageGallery() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    image_url: '',
+    file_url: '',
     category: 'Classroom',
-    is_featured: true
+    is_featured: false,
+    is_published: true
   });
-  const [imagePreview, setImagePreview] = useState('');
-  const [imageSource, setImageSource] = useState('upload'); // 'upload' | 'camera' | 'url'
+  
+  const [mediaPreview, setMediaPreview] = useState('');
+  const [mediaType, setMediaType] = useState('image'); // 'image' | 'video'
+  const [mediaSource, setMediaSource] = useState('upload'); // 'upload' | 'camera' | 'url'
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Batch Progress State for 1000+ files
+  // Upload Progress & Batch Files
   const [uploadProgress, setUploadProgress] = useState(null); // { current: 0, total: 0 }
   const [pendingFiles, setPendingFiles] = useState([]);
 
   // File Inputs
   const fileInputRef = useRef(null);
-  const cameraInputRef = useRef(null);
   const dropZoneRef = useRef(null);
 
   const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
     loadGallery();
+    const unsubscribe = dataService.subscribeToGallery(() => {
+      loadGallery();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadGallery() {
@@ -69,15 +82,8 @@ export default function ManageGallery() {
     setGallery(data);
   }
 
-  // Handle Multi-file or single file selection
+  // File selection handler
   const handleFileSelect = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    await processSelectedFiles(files);
-    if (e.target) e.target.value = '';
-  };
-
-  const handleCameraCapture = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     await processSelectedFiles(files);
@@ -108,89 +114,100 @@ export default function ManageGallery() {
   const processSelectedFiles = async (files) => {
     setIsProcessing(true);
     try {
-      const validFiles = files.filter(f => f.type.startsWith('image/'));
+      const validFiles = [];
+      for (const file of files) {
+        const validation = validateMediaFile(file);
+        if (!validation.valid) {
+          showToast(`Skipped ${file.name}: ${validation.error}`, 'error');
+        } else {
+          validFiles.push({ file, mediaType: validation.mediaType });
+        }
+      }
+
       if (validFiles.length === 0) {
-        throw new Error('Please select valid image files (JPG, PNG, WebP, etc.)');
+        return;
       }
 
-      const overSized = validFiles.filter(f => f.size > MAX_FILE_SIZE);
-      if (overSized.length > 0) {
-        throw new Error(`${overSized.length} image(s) exceed the 25 MB limit.`);
-      }
+      setPendingFiles(validFiles.map(v => v.file));
+      const first = validFiles[0];
+      setMediaType(first.mediaType);
 
-      setPendingFiles(validFiles);
-
-      // Generate preview for the first image
-      const preview = await getImagePreview(validFiles[0]);
-      setImagePreview(preview);
+      const preview = await getMediaPreview(first.file);
+      setMediaPreview(preview);
       setForm((prev) => ({ 
         ...prev, 
-        image_url: '__pending_upload__',
-        title: prev.title || (validFiles.length === 1 ? validFiles[0].name.replace(/\.[^/.]+$/, "") : '')
+        file_url: '__pending_upload__',
+        title: prev.title || (validFiles.length === 1 ? first.file.name.replace(/\.[^/.]+$/, "") : '')
       }));
 
       if (validFiles.length > 1) {
-        showToast(`${validFiles.length} images ready for bulk upload`, 'success');
+        showToast(`${validFiles.length} files validated and ready for batch upload`, 'success');
       } else {
-        showToast('Image loaded successfully', 'success');
+        showToast(`${first.mediaType === 'video' ? 'Video' : 'Image'} validated successfully`, 'success');
       }
     } catch (err) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Error processing selected files', 'error');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const clearImage = () => {
-    setImagePreview('');
-    setForm((prev) => ({ ...prev, image_url: '' }));
+  // Camera capture callback from CameraCaptureModal
+  const handleCameraCapturedFile = async (capturedFile) => {
+    await processSelectedFiles([capturedFile]);
+    setMediaSource('camera');
+  };
+
+  const clearMedia = () => {
+    setMediaPreview('');
+    setForm((prev) => ({ ...prev, file_url: '' }));
     setPendingFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
   const resetModal = () => {
     setForm({
       title: '',
       description: '',
-      image_url: '',
+      file_url: '',
       category: 'Classroom',
-      is_featured: true
+      is_featured: false,
+      is_published: true
     });
-    setImagePreview('');
-    setImageSource('upload');
+    setMediaPreview('');
+    setMediaType('image');
+    setMediaSource('upload');
     setIsDragging(false);
     setIsProcessing(false);
     setIsUploading(false);
     setUploadProgress(null);
     setPendingFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
-  // High performance submit handler supporting single or batch 1000+ uploads
+  // Form Submit Handler (Single & Batch Upload)
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.image_url && pendingFiles.length === 0) {
-      showToast('Please select or paste an image', 'error');
+    if (!form.file_url && pendingFiles.length === 0) {
+      showToast('Please select an image or video file to upload', 'error');
       return;
     }
 
     setIsUploading(true);
 
     try {
-      // 1. BULK UPLOAD FLOW (Multiple Files)
+      // 1. BATCH UPLOAD FLOW (Multiple Files)
       if (pendingFiles.length > 1) {
         const total = pendingFiles.length;
         setUploadProgress({ current: 0, total });
 
         const batchItems = [];
-        const baseTitle = form.title.trim() || 'Campus Activity';
+        const baseTitle = form.title.trim() || 'Campus Media';
 
         for (let i = 0; i < total; i++) {
           const file = pendingFiles[i];
-          const { url } = await uploadImage(file, 'gallery');
+          const uploadRes = await uploadMedia(file, 'gallery');
 
           const autoTitle = total > 1
             ? `${baseTitle} #${i + 1}`
@@ -199,31 +216,47 @@ export default function ManageGallery() {
           batchItems.push({
             title: autoTitle,
             description: form.description || '',
-            image_url: url,
+            media_type: uploadRes.mediaType,
+            file_url: uploadRes.url,
+            image_url: uploadRes.url,
+            storage_path: uploadRes.storagePath,
+            file_name: uploadRes.fileName,
+            file_size: uploadRes.fileSize,
+            mime_type: uploadRes.mimeType,
             category: form.category,
-            is_featured: form.is_featured
+            is_featured: form.is_featured,
+            is_published: form.is_published
           });
 
           setUploadProgress({ current: i + 1, total });
         }
 
         await dataService.addGalleryItems(batchItems);
-        showToast(`Successfully uploaded ${total} images to gallery!`, 'success');
+        showToast(`Successfully uploaded ${total} media items to gallery!`, 'success');
       } 
       // 2. SINGLE FILE OR URL UPLOAD FLOW
       else {
         let finalForm = { ...form };
         if (!finalForm.title) {
-          finalForm.title = pendingFiles[0]?.name?.replace(/\.[^/.]+$/, "") || 'Campus Image';
+          finalForm.title = pendingFiles[0]?.name?.replace(/\.[^/.]+$/, "") || 'Campus Media';
         }
 
         if (pendingFiles.length === 1) {
-          const { url } = await uploadImage(pendingFiles[0], 'gallery');
-          finalForm.image_url = url;
+          const uploadRes = await uploadMedia(pendingFiles[0], 'gallery');
+          finalForm.media_type = uploadRes.mediaType;
+          finalForm.file_url = uploadRes.url;
+          finalForm.image_url = uploadRes.url;
+          finalForm.storage_path = uploadRes.storagePath;
+          finalForm.file_name = uploadRes.fileName;
+          finalForm.file_size = uploadRes.fileSize;
+          finalForm.mime_type = uploadRes.mimeType;
+        } else if (finalForm.file_url && !finalForm.media_type) {
+          finalForm.media_type = finalForm.file_url.match(/\.(mp4|webm|mov)(\?|$)/i) ? 'video' : 'image';
+          finalForm.image_url = finalForm.file_url;
         }
 
         await dataService.addGalleryItem(finalForm);
-        showToast('Photo added to gallery', 'success');
+        showToast('Media added to gallery successfully', 'success');
       }
 
       setIsModalOpen(false);
@@ -231,29 +264,37 @@ export default function ManageGallery() {
       await loadGallery();
     } catch (err) {
       console.error('Gallery submit error:', err);
-      showToast('Failed to save photos. Please try again.', 'error');
+      showToast('Failed to upload media. Please check file format and try again.', 'error');
     } finally {
       setIsUploading(false);
       setUploadProgress(null);
     }
   };
 
-  // Delete single photo
+  // Toggle Publish / Unpublish Status
+  const togglePublish = async (item) => {
+    const newStatus = !item.is_published;
+    await dataService.updateGalleryItem(item.id, { is_published: newStatus });
+    showToast(newStatus ? 'Media published to public website' : 'Media unpublished from public website', 'info');
+    await loadGallery();
+  };
+
+  // Delete single media item
   const handleDelete = async (id, title) => {
-    if (window.confirm(`Delete photo "${title}"?`)) {
+    if (window.confirm(`Delete "${title}"? This will remove the record and its storage file.`)) {
       await dataService.deleteGalleryItem(id);
-      showToast('Photo deleted', 'info');
+      showToast('Media item deleted', 'info');
       setSelectedIds(prev => prev.filter(x => x !== id));
       await loadGallery();
     }
   };
 
-  // Bulk Delete selected photos
+  // Bulk Delete selected media items
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected photos?`)) {
+    if (window.confirm(`Delete ${selectedIds.length} selected items and their storage files?`)) {
       await dataService.deleteGalleryItems(selectedIds);
-      showToast(`Deleted ${selectedIds.length} photos`, 'info');
+      showToast(`Deleted ${selectedIds.length} items`, 'info');
       setSelectedIds([]);
       await loadGallery();
     }
@@ -274,13 +315,16 @@ export default function ManageGallery() {
     );
   };
 
-  // Filtered & Paginated gallery list
+  // Filtered gallery items
   const filteredGallery = gallery.filter(item => {
     const matchesCategory = activeCategory === 'All' || item.category?.toLowerCase() === activeCategory.toLowerCase();
+    const matchesTab = activeTab === 'all' || 
+                      (activeTab === 'published' && item.is_published !== false) || 
+                      (activeTab === 'unpublished' && item.is_published === false);
     const matchesSearch = !searchQuery || 
       item.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
       item.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return matchesCategory && matchesTab && matchesSearch;
   });
 
   const paginatedGallery = filteredGallery.slice(0, visibleCount);
@@ -292,14 +336,14 @@ export default function ManageGallery() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-extrabold text-brand-primary">
-              Gallery Directory
+              Campus Media Gallery
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-brand-secondary border border-blue-100">
-              {gallery.length} Photos
+              {gallery.length} Media Items
             </span>
           </div>
           <p className="text-xs sm:text-sm text-brand-muted mt-0.5">
-            Upload, organize, and bulk-manage campus photos and student activities
+            Upload, record via camera, organize, and publish photos and videos for the public website
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -309,56 +353,86 @@ export default function ManageGallery() {
             </Button>
           )}
           <Button variant="primary" size="sm" icon={Plus} onClick={() => { resetModal(); setIsModalOpen(true); }}>
-            Upload Photos
+            Upload Photos / Videos
           </Button>
         </div>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-brand-border shadow-soft flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-brand-border shadow-soft space-y-3">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          {/* Status Tabs */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'all' ? 'bg-brand-primary text-white shadow-sm' : 'bg-brand-bg text-brand-muted border border-brand-border'
+              }`}
+            >
+              All ({gallery.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('published')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'published' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-brand-bg text-brand-muted border border-brand-border'
+              }`}
+            >
+              Published ({gallery.filter(g => g.is_published !== false).length})
+            </button>
+            <button
+              onClick={() => setActiveTab('unpublished')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'unpublished' ? 'bg-amber-600 text-white shadow-sm' : 'bg-brand-bg text-brand-muted border border-brand-border'
+              }`}
+            >
+              Drafts ({gallery.filter(g => g.is_published === false).length})
+            </button>
+          </div>
+
+          {/* Search & Select All Controls */}
+          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+            <div className="relative flex-1 md:w-64">
+              <Search className="w-4 h-4 text-brand-muted absolute left-3.5 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setVisibleCount(PAGE_SIZE); }}
+                placeholder="Search by title..."
+                className="w-full pl-9 pr-3.5 py-1.5 rounded-xl border border-brand-border text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary"
+              />
+            </div>
+
+            {filteredGallery.length > 0 && (
+              <button
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 text-xs font-semibold text-brand-muted hover:text-brand-primary shrink-0"
+              >
+                {selectedIds.length === filteredGallery.length && filteredGallery.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-brand-primary" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                <span>Select All</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Category Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-brand-border/60">
           {['All', ...CATEGORIES].map(cat => (
             <button
               key={cat}
               onClick={() => { setActiveCategory(cat); setVisibleCount(PAGE_SIZE); }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeCategory === cat
-                  ? 'bg-brand-primary text-white shadow-sm'
-                  : 'bg-brand-bg text-brand-muted hover:text-brand-primary hover:bg-gray-100 border border-brand-border'
+                  ? 'bg-blue-50 text-brand-secondary border border-blue-200 shadow-xs'
+                  : 'bg-brand-bg text-brand-muted hover:text-brand-primary border border-brand-border'
               }`}
             >
               {cat}
             </button>
           ))}
-        </div>
-
-        {/* Search & Select All Controls */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-          <div className="relative flex-1 md:w-64">
-            <Search className="w-4 h-4 text-brand-muted absolute left-3.5 top-2.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setVisibleCount(PAGE_SIZE); }}
-              placeholder="Search by title..."
-              className="w-full pl-9 pr-3.5 py-1.5 rounded-xl border border-brand-border text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary"
-            />
-          </div>
-
-          {filteredGallery.length > 0 && (
-            <button
-              onClick={toggleSelectAll}
-              className="flex items-center gap-1.5 text-xs font-semibold text-brand-muted hover:text-brand-primary shrink-0"
-            >
-              {selectedIds.length === filteredGallery.length && filteredGallery.length > 0 ? (
-                <CheckSquare className="w-4 h-4 text-brand-primary" />
-              ) : (
-                <Square className="w-4 h-4" />
-              )}
-              <span>Select All</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -368,6 +442,8 @@ export default function ManageGallery() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {paginatedGallery.map((item) => {
               const isSelected = selectedIds.includes(item.id);
+              const isVideo = item.media_type === 'video' || (item.file_url && item.file_url.match(/\.(mp4|webm|mov)(\?|$)/i));
+
               return (
                 <div
                   key={item.id}
@@ -375,7 +451,7 @@ export default function ManageGallery() {
                     isSelected ? 'border-brand-primary ring-2 ring-brand-primary/20 bg-blue-50/20' : 'border-brand-border hover:shadow-md'
                   }`}
                 >
-                  {/* Selection Checkbox Badge */}
+                  {/* Checkbox Badge */}
                   <button
                     onClick={() => toggleSelectOne(item.id)}
                     className="absolute top-3 left-3 z-10 w-7 h-7 rounded-lg bg-white/90 backdrop-blur-sm border border-brand-border flex items-center justify-center shadow-sm hover:scale-105 transition-transform"
@@ -387,24 +463,47 @@ export default function ManageGallery() {
                     )}
                   </button>
 
-                  <div className="relative aspect-[16/10] bg-gray-100">
-                    <img
-                      src={item.image_url}
-                      alt={item.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                    <span className="absolute top-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-md bg-white/95 text-brand-primary shadow-sm">
-                      {item.category}
-                    </span>
-                    {item.is_featured && (
-                      <span className="absolute bottom-3 left-3 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500 text-white shadow-sm flex items-center gap-1">
-                        <Star className="w-3 h-3 fill-white" />
-                        Featured
-                      </span>
+                  {/* Media Display Aspect */}
+                  <div className="relative aspect-[16/10] bg-black/90 overflow-hidden flex items-center justify-center">
+                    {isVideo ? (
+                      <video
+                        src={item.file_url || item.image_url}
+                        className="w-full h-full object-cover"
+                        preload="metadata"
+                      />
+                    ) : (
+                      <img
+                        src={item.file_url || item.image_url}
+                        alt={item.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
                     )}
+
+                    {/* Media Type Badge */}
+                    <span className="absolute top-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-md bg-white/95 text-brand-primary shadow-sm flex items-center gap-1">
+                      {isVideo ? <VideoIcon className="w-3.5 h-3.5 text-blue-600" /> : <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />}
+                      <span>{item.category}</span>
+                    </span>
+
+                    {/* Featured & Published Status */}
+                    <div className="absolute bottom-3 left-3 flex items-center gap-1.5">
+                      {item.is_featured && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500 text-white shadow-sm flex items-center gap-0.5">
+                          <Star className="w-3 h-3 fill-white" />
+                          Featured
+                        </span>
+                      )}
+                      {item.is_published === false && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-800 text-white shadow-sm flex items-center gap-0.5">
+                          <EyeOff className="w-3 h-3" />
+                          Draft
+                        </span>
+                      )}
+                    </div>
                   </div>
 
+                  {/* Info & Controls */}
                   <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
                       <h4 className="text-sm font-bold text-brand-primary line-clamp-1">{item.title}</h4>
@@ -414,9 +513,19 @@ export default function ManageGallery() {
                     </div>
 
                     <div className="pt-3 mt-3 border-t border-brand-border flex items-center justify-between">
-                      <span className="text-[10px] text-brand-muted font-mono">
-                        {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Active'}
-                      </span>
+                      <button
+                        onClick={() => togglePublish(item)}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${
+                          item.is_published !== false
+                            ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                            : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+                        }`}
+                        title={item.is_published !== false ? "Unpublish from public website" : "Publish to public website"}
+                      >
+                        {item.is_published !== false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        <span>{item.is_published !== false ? 'Published' : 'Unpublished'}</span>
+                      </button>
+
                       <button
                         onClick={() => handleDelete(item.id, item.title)}
                         className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-1 text-xs font-semibold"
@@ -431,7 +540,7 @@ export default function ManageGallery() {
             })}
           </div>
 
-          {/* Load More Button for 1000+ Items */}
+          {/* Load More Button */}
           {visibleCount < filteredGallery.length && (
             <div className="text-center pt-4">
               <Button
@@ -441,7 +550,7 @@ export default function ManageGallery() {
                 iconPosition="right"
                 onClick={() => setVisibleCount(prev => prev + PAGE_SIZE * 2)}
               >
-                Load More Photos ({filteredGallery.length - visibleCount} remaining)
+                Load More Media ({filteredGallery.length - visibleCount} remaining)
               </Button>
             </div>
           )}
@@ -449,50 +558,48 @@ export default function ManageGallery() {
       ) : (
         <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-brand-border shadow-soft">
           <ImageIcon className="w-12 h-12 text-brand-muted mx-auto mb-3" />
-          <h3 className="text-base font-bold text-brand-primary mb-1">No images match your filter</h3>
-          <p className="text-xs text-brand-muted mb-4">Try clearing your search query or upload new photos.</p>
+          <h3 className="text-base font-bold text-brand-primary mb-1">No media items match your filter</h3>
+          <p className="text-xs text-brand-muted mb-4">Try clearing your search query or upload new photos and videos.</p>
           <Button variant="primary" size="sm" icon={Plus} onClick={() => { resetModal(); setIsModalOpen(true); }}>
-            Upload Photos
+            Upload Photos / Videos
           </Button>
         </div>
       )}
 
-      {/* Hidden Multi-file & Camera inputs */}
+      {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
         onChange={handleFileSelect}
         className="hidden"
-        id="gallery-file-input"
-      />
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handleCameraCapture}
-        className="hidden"
-        id="gallery-camera-input"
+        id="gallery-media-input"
       />
 
-      {/* Modal */}
+      {/* Camera Capture Modal */}
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={handleCameraCapturedFile}
+      />
+
+      {/* Upload Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => { if (!isUploading) { setIsModalOpen(false); resetModal(); } }}
-        title="Upload Images to Campus Gallery"
+        title="Upload Media to Campus Gallery"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-brand-text mb-1 uppercase tracking-wide">
-              Photo Title / Prefix {pendingFiles.length > 1 ? '(Applied to batch)' : ''}
+              Media Title {pendingFiles.length > 1 ? '(Applied to batch)' : ''}
             </label>
             <input
               type="text"
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder={pendingFiles.length > 1 ? "e.g. Computer Lab Practice Session" : "e.g. Practical Computer Practice Session"}
+              placeholder={pendingFiles.length > 1 ? "e.g. Practical Lab Activity" : "e.g. Computer Practical Practice Session"}
               className="w-full px-3.5 py-2 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
             />
           </div>
@@ -510,52 +617,52 @@ export default function ManageGallery() {
             </select>
           </div>
 
-          {/* Image Source Selector */}
+          {/* Media Source Buttons */}
           <div>
             <label className="block text-xs font-bold text-brand-text mb-2 uppercase tracking-wide">
-              Image Source <span className="text-red-500">*</span>
+              Select Media Source <span className="text-red-500">*</span>
             </label>
             <div className="flex gap-2 mb-3">
               <button
                 type="button"
-                onClick={() => setImageSource('upload')}
+                onClick={() => setMediaSource('upload')}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                  imageSource === 'upload'
+                  mediaSource === 'upload'
                     ? 'bg-brand-primary text-white border-brand-primary shadow-md'
                     : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
-                Select File(s)
+                File Picker
               </button>
               <button
                 type="button"
-                onClick={() => setImageSource('camera')}
+                onClick={() => { setMediaSource('camera'); setIsCameraModalOpen(true); }}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                  imageSource === 'camera'
+                  mediaSource === 'camera'
                     ? 'bg-brand-primary text-white border-brand-primary shadow-md'
                     : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
                 }`}
               >
                 <Camera className="w-3.5 h-3.5" />
-                Camera
+                Live Camera
               </button>
               <button
                 type="button"
-                onClick={() => setImageSource('url')}
+                onClick={() => setMediaSource('url')}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                  imageSource === 'url'
+                  mediaSource === 'url'
                     ? 'bg-brand-primary text-white border-brand-primary shadow-md'
                     : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
                 }`}
               >
                 <Link className="w-3.5 h-3.5" />
-                URL
+                Media URL
               </button>
             </div>
 
-            {/* Upload / Multi-file Drag-and-Drop Zone */}
-            {imageSource === 'upload' && !imagePreview && (
+            {/* Drag and Drop File Picker Zone */}
+            {mediaSource === 'upload' && !mediaPreview && (
               <div
                 ref={dropZoneRef}
                 onDragOver={handleDragOver}
@@ -571,7 +678,7 @@ export default function ManageGallery() {
                 {isProcessing ? (
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="w-8 h-8 text-brand-primary animate-spin" />
-                    <p className="text-xs font-semibold text-brand-muted">Processing image(s)...</p>
+                    <p className="text-xs font-semibold text-brand-muted">Processing file(s)...</p>
                   </div>
                 ) : (
                   <>
@@ -579,93 +686,82 @@ export default function ManageGallery() {
                       <Upload className="w-5 h-5 text-brand-primary" />
                     </div>
                     <div className="text-center">
-                      <p className="text-sm font-bold text-brand-primary">Click to select files (Supports Multi-Selection)</p>
-                      <p className="text-xs text-brand-muted mt-0.5">or drag and drop multiple images here</p>
-                      <p className="text-[10px] text-brand-muted/70 mt-1">Select dozens or 100s of JPG, PNG, WebP files • Max 25 MB/file</p>
+                      <p className="text-sm font-bold text-brand-primary">Click to select Image or Video files</p>
+                      <p className="text-xs text-brand-muted mt-0.5">or drag and drop multiple media files here</p>
+                      <p className="text-[10px] text-brand-muted/70 mt-1">Supports JPG, PNG, WebP (Max 25 MB) & MP4, WebM, MOV (Max 100 MB)</p>
                     </div>
                   </>
                 )}
               </div>
             )}
 
-            {/* Camera Capture Zone */}
-            {imageSource === 'camera' && !imagePreview && (
+            {/* Live Camera Launch Button */}
+            {mediaSource === 'camera' && !mediaPreview && (
               <div
-                onClick={() => cameraInputRef.current?.click()}
-                className={`flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-brand-border hover:border-brand-primary hover:bg-gray-50 cursor-pointer transition-all ${
-                  isProcessing ? 'pointer-events-none opacity-60' : ''
-                }`}
+                onClick={() => setIsCameraModalOpen(true)}
+                className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-brand-border hover:border-brand-primary hover:bg-gray-50 cursor-pointer transition-all"
               >
-                {isProcessing ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="w-8 h-8 text-brand-primary animate-spin" />
-                    <p className="text-xs font-semibold text-brand-muted">Processing photo...</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-                      <Camera className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-emerald-600">Tap to open camera</p>
-                      <p className="text-xs text-brand-muted mt-0.5">Take a photo using your device camera</p>
-                    </div>
-                  </>
-                )}
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+                  <Camera className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-emerald-600">Click to Open Camera</p>
+                  <p className="text-xs text-brand-muted mt-0.5">Snap a photo or record video directly from browser camera</p>
+                </div>
               </div>
             )}
 
             {/* URL Input */}
-            {imageSource === 'url' && !imagePreview && (
+            {mediaSource === 'url' && !mediaPreview && (
               <div className="space-y-2">
                 <input
                   type="url"
-                  value={form.image_url === '__pending_upload__' ? '' : form.image_url}
+                  value={form.file_url === '__pending_upload__' ? '' : form.file_url}
                   onChange={(e) => {
                     setPendingFiles([]);
-                    setForm({ ...form, image_url: e.target.value });
-                    if (e.target.value) setImagePreview(e.target.value);
+                    const val = e.target.value;
+                    const detectedType = val.match(/\.(mp4|webm|mov)(\?|$)/i) ? 'video' : 'image';
+                    setMediaType(detectedType);
+                    setForm({ ...form, file_url: val });
+                    if (val) setMediaPreview(val);
                   }}
-                  placeholder="https://images.unsplash.com/..."
+                  placeholder="https://images.unsplash.com/... or https://domain.com/video.mp4"
                   className="w-full px-3.5 py-2 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 />
-                <p className="text-[10px] text-brand-muted/70">Paste a direct image URL from the web</p>
+                <p className="text-[10px] text-brand-muted/70">Paste a direct image or video URL</p>
               </div>
             )}
 
-            {/* Image Preview / Multi-file Batch Badge */}
-            {imagePreview && (
-              <div className="relative rounded-2xl overflow-hidden border border-brand-border bg-gray-50">
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="w-full aspect-[16/10] object-cover"
-                  onError={() => {
-                    if (imageSource === 'url') {
-                      showToast('Invalid image URL — could not load preview', 'error');
-                      clearImage();
-                    }
-                  }}
-                />
+            {/* Media Preview Box */}
+            {mediaPreview && (
+              <div className="relative rounded-2xl overflow-hidden border border-brand-border bg-black">
+                {mediaType === 'video' ? (
+                  <video src={mediaPreview} controls className="w-full aspect-[16/10] object-contain" />
+                ) : (
+                  <img
+                    src={mediaPreview}
+                    alt="Preview"
+                    className="w-full aspect-[16/10] object-cover"
+                    onError={() => {
+                      if (mediaSource === 'url') {
+                        showToast('Invalid media URL — could not load preview', 'error');
+                        clearMedia();
+                      }
+                    }}
+                  />
+                )}
                 <button
                   type="button"
-                  onClick={clearImage}
-                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
-                  title="Remove image selection"
+                  onClick={clearMedia}
+                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors z-10"
+                  title="Remove media selection"
                 >
                   <X className="w-4 h-4" />
                 </button>
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-3 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold text-white/90 flex items-center gap-1">
-                    {imageSource === 'camera' ? (
-                      <><Camera className="w-3 h-3" /> Photo captured</>
-                    ) : imageSource === 'url' ? (
-                      <><Link className="w-3 h-3" /> From URL</>
-                    ) : pendingFiles.length > 1 ? (
-                      <><Layers className="w-3.5 h-3.5 text-brand-accent" /> <span className="font-bold text-white">{pendingFiles.length} Photos Selected</span></>
-                    ) : (
-                      <><Upload className="w-3 h-3" /> File selected</>
-                    )}
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-white/90 flex items-center gap-1.5">
+                    {mediaType === 'video' ? <VideoIcon className="w-3.5 h-3.5 text-blue-400" /> : <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />}
+                    <span>{mediaType === 'video' ? 'Video selected' : pendingFiles.length > 1 ? `${pendingFiles.length} Photos Selected` : 'Image selected'}</span>
                   </p>
                 </div>
               </div>
@@ -685,17 +781,32 @@ export default function ManageGallery() {
             />
           </div>
 
-          <div className="flex items-center gap-3 pt-1">
-            <input
-              type="checkbox"
-              id="is_featured_img"
-              checked={form.is_featured}
-              onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
-              className="w-4 h-4 rounded text-brand-primary focus:ring-brand-primary"
-            />
-            <label htmlFor="is_featured_img" className="text-xs font-semibold text-brand-text">
-              Highlight on Homepage
-            </label>
+          <div className="flex items-center justify-between pt-1 border-t border-brand-border/60">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_featured_media"
+                checked={form.is_featured}
+                onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
+                className="w-4 h-4 rounded text-brand-primary focus:ring-brand-primary"
+              />
+              <label htmlFor="is_featured_media" className="text-xs font-semibold text-brand-text">
+                Highlight on Homepage
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_published_media"
+                checked={form.is_published}
+                onChange={(e) => setForm({ ...form, is_published: e.target.checked })}
+                className="w-4 h-4 rounded text-brand-primary focus:ring-brand-primary"
+              />
+              <label htmlFor="is_published_media" className="text-xs font-semibold text-brand-text">
+                Publish Immediately
+              </label>
+            </div>
           </div>
 
           {/* Upload Progress Bar for Batch Uploads */}
@@ -729,11 +840,11 @@ export default function ManageGallery() {
               variant="primary" 
               size="sm" 
               loading={isUploading} 
-              disabled={(!form.image_url && pendingFiles.length === 0) || isProcessing || isUploading}
+              disabled={(!form.file_url && pendingFiles.length === 0) || isProcessing || isUploading}
             >
               {isUploading 
                 ? (uploadProgress ? `Uploading (${uploadProgress.current}/${uploadProgress.total})...` : 'Uploading...') 
-                : (pendingFiles.length > 1 ? `Upload ${pendingFiles.length} Photos` : 'Save Photo')}
+                : (pendingFiles.length > 1 ? `Upload ${pendingFiles.length} Files` : 'Save Media')}
             </Button>
           </div>
         </form>

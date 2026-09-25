@@ -63,11 +63,21 @@ CREATE TABLE IF NOT EXISTS public.gallery (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
   description TEXT,
-  image_url TEXT NOT NULL,
+  media_type TEXT NOT NULL DEFAULT 'image', -- 'image' or 'video'
+  file_url TEXT NOT NULL,
+  image_url TEXT,
+  thumbnail_url TEXT,
+  storage_path TEXT,
+  file_name TEXT,
+  file_size INTEGER,
+  mime_type TEXT,
   category TEXT NOT NULL DEFAULT 'Institute', -- 'Institute', 'Classroom', 'Students', 'Activities', 'Events'
   display_order INTEGER DEFAULT 0,
+  is_published BOOLEAN DEFAULT true,
   is_featured BOOLEAN DEFAULT false,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  uploaded_by TEXT DEFAULT 'admin',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 5. REVIEWS TABLE
