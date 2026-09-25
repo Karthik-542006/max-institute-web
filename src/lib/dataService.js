@@ -1375,24 +1375,39 @@ export const dataService = {
   },
 
   async getFAQ() {
+    let supabaseData = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').select('*').order('display_order', { ascending: true });
-        if (!error && Array.isArray(data) && data.length > 0) {
-          setLocal(STORAGE_KEYS.FAQ, data);
-          idbSet(STORAGE_KEYS.FAQ, data);
-          return data;
+        if (!error && Array.isArray(data)) {
+          supabaseData = data;
+        } else if (error) {
+          console.error('Supabase getFAQ error:', error);
         }
       } catch (e) {
         console.warn('Supabase FAQ failed', e);
       }
     }
-    return getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+
+    const localData = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+
+    if (supabaseData) {
+      const supabaseIds = new Set(supabaseData.map(item => String(item.id)));
+      const localOnly = localData.filter(item => item && item.id && !supabaseIds.has(String(item.id)));
+      const merged = [...supabaseData, ...localOnly];
+      setLocal(STORAGE_KEYS.FAQ, merged);
+      idbSet(STORAGE_KEYS.FAQ, merged);
+      return merged;
+    }
+
+    return localData;
   },
 
   async addFAQ(faq) {
-    const newFaq = {
-      id: faq.id || `faq-${Date.now()}`,
+    const rawId = faq.id;
+    const isValUUID = isUUID(rawId);
+    
+    const insertPayload = {
       category: faq.category || 'General',
       question: String(faq.question || '').trim(),
       answer: String(faq.answer || '').trim(),
@@ -1401,16 +1416,19 @@ export const dataService = {
       created_at: new Date().toISOString()
     };
 
+    if (isValUUID) {
+      insertPayload.id = rawId;
+    }
+
+    let savedItem = { id: rawId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `faq-${Date.now()}`), ...insertPayload };
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('faq').insert(newFaq).select().single();
+        const { data, error } = await supabase.from('faq').insert(insertPayload).select().single();
         if (!error && data) {
-          const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-          const updated = [...current.filter(f => f.id !== data.id), data];
-          setLocal(STORAGE_KEYS.FAQ, updated);
-          idbSet(STORAGE_KEYS.FAQ, updated);
-          this.broadcastFAQChange(updated);
-          return data;
+          savedItem = data;
+        } else if (error) {
+          console.error('Supabase addFAQ error:', error);
         }
       } catch (e) {
         console.warn('Supabase addFAQ failed', e);
@@ -1418,34 +1436,36 @@ export const dataService = {
     }
 
     const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const updated = [...current.filter(f => f.id !== newFaq.id), newFaq];
+    const updated = [...current.filter(f => String(f.id) !== String(savedItem.id) && String(f.id) !== String(rawId)), savedItem];
     setLocal(STORAGE_KEYS.FAQ, updated);
     idbSet(STORAGE_KEYS.FAQ, updated);
     this.broadcastFAQChange(updated);
-    return newFaq;
+    return savedItem;
   },
 
   async updateFAQ(id, updates) {
     const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const target = current.find(f => f.id === id) || {};
+    const target = current.find(f => String(f.id) === String(id)) || {};
     const merged = { ...target, ...updates, id };
 
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
       try {
         const { data, error } = await supabase.from('faq').update(updates).eq('id', id).select().single();
         if (!error && data) {
-          const updated = current.map(f => (f.id === id ? data : f));
+          const updated = current.map(f => (String(f.id) === String(id) ? data : f));
           setLocal(STORAGE_KEYS.FAQ, updated);
           idbSet(STORAGE_KEYS.FAQ, updated);
           this.broadcastFAQChange(updated);
           return data;
+        } else if (error) {
+          console.error('Supabase updateFAQ error:', error);
         }
       } catch (e) {
         console.warn('Supabase updateFAQ failed', e);
       }
     }
 
-    const updated = current.map(f => (f.id === id ? merged : f));
+    const updated = current.map(f => (String(f.id) === String(id) ? merged : f));
     setLocal(STORAGE_KEYS.FAQ, updated);
     idbSet(STORAGE_KEYS.FAQ, updated);
     this.broadcastFAQChange(updated);
@@ -1453,7 +1473,7 @@ export const dataService = {
   },
 
   async deleteFAQ(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
       try {
         await supabase.from('faq').delete().eq('id', id);
       } catch (e) {
@@ -1462,7 +1482,7 @@ export const dataService = {
     }
 
     const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const filtered = current.filter(f => f.id !== id);
+    const filtered = current.filter(f => String(f.id) !== String(id));
     setLocal(STORAGE_KEYS.FAQ, filtered);
     idbSet(STORAGE_KEYS.FAQ, filtered);
     this.broadcastFAQChange(filtered);
