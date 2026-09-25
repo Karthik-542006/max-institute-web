@@ -5,7 +5,6 @@ import {
   Plus, 
   Trash2, 
   Star, 
-  Camera, 
   Upload, 
   Link, 
   X, 
@@ -22,7 +21,6 @@ import {
 } from 'lucide-react';
 import { dataService } from '../lib/dataService';
 import { validateMediaFile, uploadMedia, getMediaPreview } from '../lib/mediaUpload';
-import CameraCaptureModal from '../components/CameraCaptureModal';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import Toast, { useToast } from '../components/Toast';
@@ -33,7 +31,6 @@ const PAGE_SIZE = 18;
 export default function ManageGallery() {
   const [gallery, setGallery] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'published' | 'unpublished'
   const [searchQuery, setSearchQuery] = useState('');
@@ -150,12 +147,6 @@ export default function ManageGallery() {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Camera capture callback from CameraCaptureModal
-  const handleCameraCapturedFile = async (capturedFile) => {
-    await processSelectedFiles([capturedFile]);
-    setMediaSource('camera');
   };
 
   const clearMedia = () => {
@@ -577,13 +568,6 @@ export default function ManageGallery() {
         id="gallery-media-input"
       />
 
-      {/* Camera Capture Modal */}
-      <CameraCaptureModal
-        isOpen={isCameraModalOpen}
-        onClose={() => setIsCameraModalOpen(false)}
-        onCapture={handleCameraCapturedFile}
-      />
-
       {/* Upload Modal */}
       <Modal
         isOpen={isModalOpen}
@@ -633,19 +617,7 @@ export default function ManageGallery() {
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
-                File Picker
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMediaSource('camera'); setIsCameraModalOpen(true); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                  mediaSource === 'camera'
-                    ? 'bg-brand-primary text-white border-brand-primary shadow-md'
-                    : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
-                }`}
-              >
-                <Camera className="w-3.5 h-3.5" />
-                Live Camera
+                File Picker / Drag & Drop
               </button>
               <button
                 type="button"
@@ -692,22 +664,6 @@ export default function ManageGallery() {
                     </div>
                   </>
                 )}
-              </div>
-            )}
-
-            {/* Live Camera Launch Button */}
-            {mediaSource === 'camera' && !mediaPreview && (
-              <div
-                onClick={() => setIsCameraModalOpen(true)}
-                className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-brand-border hover:border-brand-primary hover:bg-gray-50 cursor-pointer transition-all"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-                  <Camera className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-bold text-emerald-600">Click to Open Camera</p>
-                  <p className="text-xs text-brand-muted mt-0.5">Snap a photo or record video directly from browser camera</p>
-                </div>
               </div>
             )}
 
