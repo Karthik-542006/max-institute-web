@@ -864,11 +864,15 @@ export const dataService = {
           table_name: tableName,
           record_id: recordId ? String(recordId) : null,
           old_data: oldData ? JSON.parse(JSON.stringify(oldData)) : null,
-          new_data: newData ? JSON.parse(JSON.stringify(newData)) : null,
-          created_at: new Date().toISOString()
+          new_data: newData ? JSON.parse(JSON.stringify(newData)) : null
         };
-        await supabase.from('admin_activity_log').insert(payload).catch(() => {});
-      } catch (e) {}
+        const { error } = await supabase.from('admin_activity_log').insert(payload);
+        if (error) {
+          console.warn('Admin activity log notice:', error);
+        }
+      } catch (e) {
+        console.warn('Admin activity logging exception:', e);
+      }
     }
   },
 
@@ -960,7 +964,9 @@ export const dataService = {
           // Rollback newly uploaded storage files on DB insertion error
           for (const item of formattedItems) {
             if (item.storage_path) {
-              await deleteStorageFile('gallery', item.storage_path).catch(() => {});
+              try {
+                await deleteStorageFile('gallery', item.storage_path);
+              } catch (delErr) {}
             }
           }
           throw new Error(error.message || 'Failed to save gallery items to database');
@@ -969,7 +975,9 @@ export const dataService = {
         console.warn('Supabase addGalleryItems batch notice:', e);
         for (const item of formattedItems) {
           if (item.storage_path) {
-            await deleteStorageFile('gallery', item.storage_path).catch(() => {});
+            try {
+              await deleteStorageFile('gallery', item.storage_path);
+            } catch (delErr) {}
           }
         }
         throw e;
@@ -1037,7 +1045,9 @@ export const dataService = {
 
         // Clean up corresponding storage files
         for (const path of storagePaths) {
-          await deleteStorageFile('gallery', path).catch(() => {});
+          try {
+            await deleteStorageFile('gallery', path);
+          } catch (delErr) {}
         }
 
         await this.logAdminActivity('DELETE_GALLERY', 'gallery', validUUIDs.join(','), null, { deleted_count: validUUIDs.length });

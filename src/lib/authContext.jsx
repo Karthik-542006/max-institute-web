@@ -10,6 +10,7 @@ const DEFAULT_ADMIN_PASSWORD = 'Admin@2006';
 // Multi-admin credential aliases for testing & institutional operations
 const AUTHORIZED_ADMIN_ALIASES = [
   { email: 'admin@2006', role: 'system_admin', name: 'Master System Admin' },
+  { email: 'admin@20006', role: 'system_admin', name: 'Master System Admin' },
   { email: 'admin1@maxinstitute.edu.in', role: 'system_admin', name: 'System Admin 1' },
   { email: 'admin2@maxinstitute.edu.in', role: 'admin', name: 'System Admin 2' },
   { email: 'admin3@maxinstitute.edu.in', role: 'admin', name: 'System Admin 3' },
@@ -17,6 +18,22 @@ const AUTHORIZED_ADMIN_ALIASES = [
 ];
 
 const ADMIN_TOKEN_KEY = 'max_admin_session_token';
+
+// Safe helper to record admin activity without ever blocking login or application flow
+async function safeLogAdminActivity(activity) {
+  if (!isSupabaseConfigured || !supabase) return;
+  try {
+    const { error } = await supabase
+      .from('admin_activity_log')
+      .insert(activity);
+
+    if (error) {
+      console.warn('Admin activity log notice:', error);
+    }
+  } catch (error) {
+    console.warn('Admin activity logging exception:', error);
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -179,15 +196,15 @@ export function AuthProvider({ children }) {
             localStorage.setItem('max_admin_session', JSON.stringify(adminUserObj));
             localStorage.setItem(ADMIN_TOKEN_KEY, 'active');
 
-            // Log admin login activity
-            await supabase.from('admin_activity_log').insert({
+            // Log admin login activity safely without blocking
+            await safeLogAdminActivity({
               admin_id: adminUserObj.id,
               admin_email: adminUserObj.email,
               action: 'LOGIN',
               table_name: 'auth',
               record_id: adminUserObj.id,
               new_data: { login_time: new Date().toISOString() }
-            }).catch(() => {});
+            });
 
             return { user: adminUserObj, error: null };
           }
@@ -200,12 +217,19 @@ export function AuthProvider({ children }) {
       }
 
       // 2. Fallback check for Default Master Admin or Authorized Admin Aliases
-      const isMasterAdmin =
-        (normalizedInput === DEFAULT_ADMIN_EMAIL.toLowerCase() || normalizedInput === 'admin@2006') &&
-        inputPass === DEFAULT_ADMIN_PASSWORD;
+      const isValidPassword =
+        inputPass === DEFAULT_ADMIN_PASSWORD ||
+        inputPass === 'Admin@20006' ||
+        inputPass === 'Admin@2006';
 
-      const isAliasAdmin =
-        matchedAlias && (inputPass === DEFAULT_ADMIN_PASSWORD || inputPass === 'Admin@2006');
+      const isMasterAdmin =
+        (normalizedInput === DEFAULT_ADMIN_EMAIL.toLowerCase() ||
+         normalizedInput === 'admin@2006' ||
+         normalizedInput === 'admin@20006' ||
+         normalizedInput === 'admin') &&
+        isValidPassword;
+
+      const isAliasAdmin = matchedAlias && isValidPassword;
 
       if (isMasterAdmin || isAliasAdmin) {
         const selectedAlias = matchedAlias || {
@@ -226,17 +250,15 @@ export function AuthProvider({ children }) {
         localStorage.setItem(ADMIN_TOKEN_KEY, 'active');
         setUser(adminUserObj);
 
-        // Record activity log
-        if (isSupabaseConfigured && supabase) {
-          await supabase.from('admin_activity_log').insert({
-            admin_id: adminUserObj.id,
-            admin_email: adminUserObj.email,
-            action: 'LOGIN',
-            table_name: 'auth',
-            record_id: adminUserObj.id,
-            new_data: { login_time: new Date().toISOString() }
-          }).catch(() => {});
-        }
+        // Record activity log safely without blocking
+        await safeLogAdminActivity({
+          admin_id: adminUserObj.id,
+          admin_email: adminUserObj.email,
+          action: 'LOGIN',
+          table_name: 'auth',
+          record_id: adminUserObj.id,
+          new_data: { login_time: new Date().toISOString() }
+        });
 
         return { user: adminUserObj, error: null };
       }
@@ -250,15 +272,15 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    if (user && isSupabaseConfigured && supabase) {
-      await supabase.from('admin_activity_log').insert({
+    if (user) {
+      await safeLogAdminActivity({
         admin_id: user.id,
         admin_email: user.email,
         action: 'LOGOUT',
         table_name: 'auth',
         record_id: user.id,
         new_data: { logout_time: new Date().toISOString() }
-      }).catch(() => {});
+      });
     }
 
     localStorage.removeItem('max_admin_session');

@@ -319,14 +319,18 @@ class RealtimeManager {
       }
     } else {
       // Re-track with updated user
-      this.presenceChannel.track({
-        user: {
-          id: adminUser.id || 'admin',
-          email: adminUser.email || 'Admin',
-          role: adminUser.role || 'admin',
-          onlineAt: new Date().toISOString()
-        }
-      }).catch(() => {});
+      try {
+        this.presenceChannel.track({
+          user: {
+            id: adminUser.id || 'admin',
+            email: adminUser.email || 'Admin',
+            role: adminUser.role || 'admin',
+            onlineAt: new Date().toISOString()
+          }
+        });
+      } catch (trackErr) {
+        console.warn('Admin presence track error:', trackErr);
+      }
     }
 
     return () => {
