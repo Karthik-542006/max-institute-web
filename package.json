@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:enquiry": "node scripts/test-enquiry-sync.js",
+    "test:e2e": "node scripts/test-enquiry-end-to-end.js",
     "test:announcement": "node scripts/test-announcement-schedule.js"
   },
   "dependencies": {

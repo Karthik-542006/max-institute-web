@@ -94,7 +94,10 @@ export default function AdminDashboard() {
         dataService.getActivityLog(15)
       ]);
 
-      const newEnqs = Array.isArray(enquiries) ? enquiries.filter(e => e.status === 'New') : [];
+      const allEnqs = Array.isArray(enquiries) ? enquiries : [];
+      const newEnqsCount = allEnqs.filter(e => String(e.status || '').toLowerCase() === 'new').length;
+      const totalEnqsCount = allEnqs.length;
+      const resolvedEnqsCount = allEnqs.filter(e => ['resolved', 'closed'].includes(String(e.status || '').toLowerCase())).length;
       const galleryList = Array.isArray(gallery) ? gallery : [];
 
       const published = galleryList.filter(g => g.is_published !== false);
@@ -110,10 +113,12 @@ export default function AdminDashboard() {
         galleryUnpublished: unpublished.length,
         galleryImages: images.length,
         galleryVideos: videos.length,
-        newEnquiries: newEnqs.length
+        totalEnquiries: totalEnqsCount,
+        newEnquiries: newEnqsCount,
+        resolvedEnquiries: resolvedEnqsCount
       });
 
-      setRecentEnquiries(Array.isArray(enquiries) ? enquiries.slice(0, 5) : []);
+      setRecentEnquiries(allEnqs.slice(0, 5));
       setActivities(Array.isArray(activityLogs) ? activityLogs : []);
     } catch (e) {
       console.warn('Dashboard load warning:', e);
@@ -182,9 +187,19 @@ export default function AdminDashboard() {
 
   const statusStyles = {
     'New': 'bg-red-50 text-red-700 border-red-200',
+    'new': 'bg-red-50 text-red-700 border-red-200',
+    'Read': 'bg-purple-50 text-purple-700 border-purple-200',
+    'read': 'bg-purple-50 text-purple-700 border-purple-200',
     'Contacted': 'bg-blue-50 text-blue-700 border-blue-200',
+    'contacted': 'bg-blue-50 text-blue-700 border-blue-200',
     'In Progress': 'bg-amber-50 text-amber-700 border-amber-200',
-    'Closed': 'bg-gray-100 text-gray-700 border-gray-200'
+    'in progress': 'bg-amber-50 text-amber-700 border-amber-200',
+    'Resolved': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    'resolved': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    'Closed': 'bg-gray-100 text-gray-700 border-gray-200',
+    'closed': 'bg-gray-100 text-gray-700 border-gray-200',
+    'Archived': 'bg-slate-100 text-slate-700 border-slate-200',
+    'archived': 'bg-slate-100 text-slate-700 border-slate-200'
   };
 
   return (
@@ -400,8 +415,8 @@ export default function AdminDashboard() {
                       <td className="py-3 font-bold text-brand-primary">
                         {enq.name}
                       </td>
-                      <td className="py-3 text-brand-text truncate max-w-[120px]">
-                        {enq.course_name || 'General'}
+                      <td className="py-3 text-brand-text truncate max-w-[140px]" title={enq.subject || enq.course_name}>
+                        {enq.subject || enq.course_name || 'General Admission'}
                       </td>
                       <td className="py-3 text-brand-muted font-mono text-[11px]">
                         {enq.phone}

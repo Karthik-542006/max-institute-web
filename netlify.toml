@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  VITE_SUPABASE_URL = "https://nwqvurzqpypyfhxfkarn.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "sb_publishable_Kz43omTACHHfERemaFw25A_vLFtPfps"
 
 # SPA fallback — all routes serve index.html (required for React Router)
 [[redirects]]

@@ -99,10 +99,13 @@ CREATE TABLE IF NOT EXISTS public.enquiries (
   phone TEXT NOT NULL,
   email TEXT,
   course_name TEXT,
+  subject TEXT,
   message TEXT,
-  status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Contacted', 'In Progress', 'Closed')),
+  status TEXT NOT NULL DEFAULT 'New' CHECK (lower(status) IN ('new', 'read', 'contacted', 'in progress', 'resolved', 'closed', 'archived')),
   notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  admin_notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 7. FAQ TABLE

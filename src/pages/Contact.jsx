@@ -23,6 +23,7 @@ export default function Contact({ settings }) {
     name: '',
     phone: '',
     email: '',
+    subject: '',
     course_name: location.state?.selectedCourse || '',
     message: ''
   });
@@ -53,6 +54,7 @@ export default function Contact({ settings }) {
       setForm(prev => ({
         ...prev,
         course_name: location.state.selectedCourse,
+        subject: `Admission - ${location.state.selectedCourse}`,
         message: `I would like to enquire about ${location.state.selectedCourse} batches and fee details.`
       }));
     }
@@ -60,23 +62,51 @@ export default function Contact({ settings }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.phone) {
-      showToast('Please enter your full name and phone number.', 'error');
+    if (submitting) return;
+
+    const trimmedName = (form.name || '').trim();
+    const trimmedPhone = (form.phone || '').trim();
+
+    if (!trimmedName || trimmedName.length < 2) {
+      showToast('Please enter your full name (at least 2 characters).', 'error');
       return;
     }
+    if (!trimmedPhone || trimmedPhone.replace(/[^0-9]/g, '').length < 7) {
+      showToast('Please enter a valid phone number (at least 7 digits).', 'error');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await dataService.createEnquiry(form);
-      showToast('Your enquiry has been successfully submitted! Our team will contact you shortly.', 'success');
+      // Send directly to the central Supabase database and await persistent confirmation
+      await dataService.createEnquiry({
+        name: trimmedName,
+        phone: trimmedPhone,
+        email: form.email,
+        subject: form.subject || form.course_name || 'General Admission Enquiry',
+        course_name: form.course_name || form.subject || 'General Admission Enquiry',
+        message: form.message
+      });
+
+      // Show success ONLY after database confirms insertion
+      showToast('Enquiry Submitted Successfully! Our administration team will contact you shortly.', 'success');
+      
+      // Clear form only on successful database persistence
       setForm({
         name: '',
         phone: '',
         email: '',
+        subject: '',
         course_name: '',
         message: ''
       });
     } catch (err) {
-      showToast('Failed to submit enquiry. Please try calling us directly.', 'error');
+      console.error('Contact form submission error:', err);
+      const errorMsg = err.message?.includes('network') || err.message?.includes('Failed to fetch')
+        ? 'Unable to connect. Please check your internet connection and try again.'
+        : (err.message || 'Something went wrong while submitting your enquiry. Please try again.');
+      showToast(errorMsg, 'error');
+      // Notice: form state is preserved so the student does not lose their typed information
     } finally {
       setSubmitting(false);
     }
@@ -271,7 +301,11 @@ export default function Contact({ settings }) {
                       </label>
                       <select
                         value={form.course_name}
-                        onChange={(e) => setForm({ ...form, course_name: e.target.value })}
+                        onChange={(e) => setForm({ 
+                          ...form, 
+                          course_name: e.target.value,
+                          subject: form.subject || (e.target.value ? `Admission - ${e.target.value}` : '')
+                        })}
                         className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
                       >
                         <option value="">Choose a Program</option>
@@ -280,6 +314,19 @@ export default function Contact({ settings }) {
                         ))}
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-brand-text mb-1.5 uppercase tracking-wide">
+                      Subject / Topic
+                    </label>
+                    <input
+                      type="text"
+                      value={form.subject}
+                      onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                      placeholder="e.g. Course details, Weekend batch, Fees inquiry"
+                      className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                    />
                   </div>
 
                   <div>
@@ -300,11 +347,12 @@ export default function Contact({ settings }) {
                     variant="primary"
                     size="lg"
                     loading={submitting}
+                    disabled={submitting}
                     icon={Send}
                     iconPosition="right"
                     className="w-full sm:w-auto px-8 shadow-md"
                   >
-                    Submit Enquiry
+                    {submitting ? 'Submitting...' : 'Submit Enquiry'}
                   </Button>
                 </form>
               </div>

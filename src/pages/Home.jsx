@@ -106,14 +106,33 @@ export default function Home({ settings }) {
 
   const handleEnquirySubmit = async (e) => {
     e.preventDefault();
-    if (!enquiryForm.name || !enquiryForm.phone) {
-      showToast('Please provide your name and phone number.', 'error');
+    if (submitting) return;
+
+    const trimmedName = (enquiryForm.name || '').trim();
+    const trimmedPhone = (enquiryForm.phone || '').trim();
+
+    if (!trimmedName || trimmedName.length < 2) {
+      showToast('Please provide your full name (at least 2 characters).', 'error');
       return;
     }
+    if (!trimmedPhone || trimmedPhone.replace(/[^0-9]/g, '').length < 7) {
+      showToast('Please provide a valid phone number (at least 7 digits).', 'error');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await dataService.createEnquiry(enquiryForm);
-      showToast('Thank you! Your enquiry has been received. Our team will contact you shortly.', 'success');
+      await dataService.createEnquiry({
+        name: trimmedName,
+        phone: trimmedPhone,
+        email: enquiryForm.email,
+        subject: enquiryForm.course_name ? `Admission - ${enquiryForm.course_name}` : 'General Admission Enquiry',
+        course_name: enquiryForm.course_name || 'General Admission Enquiry',
+        message: enquiryForm.message
+      });
+
+      // Show success ONLY after database confirms insertion
+      showToast('Enquiry Submitted Successfully! Our team will contact you shortly.', 'success');
       setEnquiryForm({
         name: '',
         phone: '',
@@ -122,7 +141,11 @@ export default function Home({ settings }) {
         message: ''
       });
     } catch (err) {
-      showToast('Failed to submit enquiry. Please call us directly.', 'error');
+      console.error('Home enquiry submit error:', err);
+      const errorMsg = err.message?.includes('network') || err.message?.includes('Failed to fetch')
+        ? 'Unable to connect. Please check your internet connection and try again.'
+        : (err.message || 'Something went wrong while submitting your enquiry. Please try again.');
+      showToast(errorMsg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -697,11 +720,12 @@ export default function Home({ settings }) {
                     variant="primary"
                     size="lg"
                     loading={submitting}
+                    disabled={submitting}
                     icon={Send}
                     iconPosition="right"
                     className="w-full sm:w-auto px-8"
                   >
-                    Submit Enquiry
+                    {submitting ? 'Submitting...' : 'Submit Enquiry'}
                   </Button>
                 </form>
               </div>

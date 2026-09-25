@@ -9,7 +9,6 @@ const STORAGE_KEYS = {
   FACULTY: 'max_faculty',
   GALLERY: 'max_gallery',
   REVIEWS: 'max_reviews',
-  ENQUIRIES: 'max_enquiries',
   FAQ: 'max_faq',
   POSTS: 'max_posts',
 };
@@ -317,38 +316,8 @@ const DEFAULT_REVIEWS = [
   }
 ];
 
-const DEFAULT_ENQUIRIES = [
-  {
-    id: 'enq-1',
-    name: 'Arun Kumar',
-    phone: '098765 43210',
-    email: 'arun.k@gmail.com',
-    course_name: 'Basic Computer Training',
-    message: 'Interested in morning batch timings for basic computer course.',
-    status: 'New',
-    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-  },
-  {
-    id: 'enq-2',
-    name: 'Priya Dharshini',
-    phone: '098412 87654',
-    email: 'priya.d@gmail.com',
-    course_name: 'Tamil Typing (Junior & Senior)',
-    message: 'Seeking junior Tamil typing exam preparation syllabus details.',
-    status: 'Contacted',
-    created_at: new Date(Date.now() - 3600000 * 24).toISOString()
-  },
-  {
-    id: 'enq-3',
-    name: 'Rahul V.',
-    phone: '097901 23456',
-    email: 'rahul.v@gmail.com',
-    course_name: 'Technical Fundamentals',
-    message: 'Enquiring about weekend batches for hardware troubleshooting.',
-    status: 'Closed',
-    created_at: new Date(Date.now() - 3600000 * 48).toISOString()
-  }
-];
+// Enquiries are purely database-driven with zero dummy records
+const DEFAULT_ENQUIRIES = [];
 
 const DEFAULT_FAQ = [
   {
@@ -1203,99 +1172,203 @@ export const dataService = {
   },
 
   // ============================================================================
-  // 7. ENQUIRIES
+  // 7. ENQUIRIES — AUTHORITATIVE DATABASE PERSISTENCE (Supabase PostgreSQL)
   // ============================================================================
   broadcastEnquiryChange(detail = null) {
-    broadcastTableEvent('max_enquiry_submitted', 'max_enquiries_sync_channel', 'ENQUIRY_CHANGED', detail);
+    realtimeManager.broadcastEvent('enquiries', 'ENQUIRY_CHANGED', { detail });
   },
 
   subscribeToEnquiries(callback) {
-    return subscribeToTableRealtime('enquiries', 'max_enquiry_submitted', 'max_enquiries_sync_channel', callback);
+    return realtimeManager.subscribeToTable('enquiries', callback);
   },
 
   async getEnquiries() {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('enquiries').select('*').order('created_at', { ascending: false });
-        if (!error && data) {
-          setLocal(STORAGE_KEYS.ENQUIRIES, data);
-          return data;
-        }
-      } catch (e) {
-        console.warn('Supabase enquiries failed', e);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      console.warn('Supabase database client is not configured for enquiries.');
+      return [];
     }
-    return getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
+    try {
+      const { data, error } = await supabase
+        .from('enquiries')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Database fetch error in getEnquiries:', error);
+        throw new Error(error.message || 'Failed to fetch enquiries from central database.');
+      }
+
+      return (data || []).map(enq => ({
+        ...enq,
+        subject: enq.subject || enq.course_name || 'General Admission',
+        course_name: enq.course_name || enq.subject || 'General Admission',
+        admin_notes: enq.admin_notes || enq.notes || ''
+      }));
+    } catch (e) {
+      console.error('getEnquiries database query exception:', e);
+      throw e;
+    }
   },
 
   async createEnquiry(enquiry) {
-    const newId = ensureUUID(enquiry.id);
-    const newEnq = {
-      id: newId,
-      name: (enquiry.name || '').trim(),
-      phone: (enquiry.phone || '').trim(),
-      email: enquiry.email || null,
-      course_name: enquiry.course_name || null,
-      message: enquiry.message || '',
-      status: enquiry.status || 'New',
-      notes: enquiry.notes || null,
-      created_at: enquiry.created_at || new Date().toISOString()
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Unable to connect to central database. Please check your internet connection.');
+    }
+
+    // 1. Client & Service-side Validation
+    const rawName = String(enquiry.name || '').trim();
+    const rawPhone = String(enquiry.phone || '').trim();
+    if (!rawName || rawName.length < 2) {
+      throw new Error('Please enter your full name (at least 2 characters).');
+    }
+    const phoneDigits = rawPhone.replace(/[^0-9]/g, '');
+    if (!rawPhone || phoneDigits.length < 7) {
+      throw new Error('Please enter a valid phone number with at least 7 digits.');
+    }
+
+    let emailVal = enquiry.email ? String(enquiry.email).trim() : null;
+    if (emailVal) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailVal)) {
+        throw new Error('Please enter a valid email address, or leave the field blank.');
+      }
+    }
+
+    // 2. Text Sanitization (XSS prevention)
+    const sanitizeText = (str) => typeof str === 'string' ? str.replace(/[<>]/g, '').trim() : '';
+    const cleanName = sanitizeText(rawName);
+    const cleanPhone = sanitizeText(rawPhone);
+    const cleanEmail = emailVal ? sanitizeText(emailVal) : null;
+    const cleanSubject = sanitizeText(enquiry.subject || enquiry.course_name || 'General Admission');
+    const cleanMessage = sanitizeText(enquiry.message || '');
+    const cleanNotes = sanitizeText(enquiry.admin_notes || enquiry.notes || '');
+
+    // 3. Status handling (Postgres schema check constraint accepts 'New')
+    const dbPayload = {
+      id: ensureUUID(enquiry.id),
+      name: cleanName,
+      phone: cleanPhone,
+      email: cleanEmail,
+      course_name: cleanSubject,
+      message: cleanMessage,
+      status: 'New',
+      notes: cleanNotes || null,
+      created_at: new Date().toISOString()
     };
 
-    let result = newEnq;
+    // 4. Send to central database and await authoritative insertion confirmation
+    const { data, error } = await supabase
+      .from('enquiries')
+      .insert(dbPayload)
+      .select()
+      .single();
 
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.from('enquiries').insert(newEnq).select().single();
-      if (!error && data) {
-        result = data;
-      } else if (error) {
-        console.error('Supabase createEnquiry error:', error);
-        throw new Error(error.message || 'Failed to submit enquiry to database');
-      }
+    if (error) {
+      console.error('Supabase database insert failed:', error);
+      throw new Error(error.message || 'Something went wrong while submitting your enquiry. Please try again.');
     }
 
-    const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const updated = [result, ...list.filter(item => String(item.id) !== String(result.id))];
-    setLocal(STORAGE_KEYS.ENQUIRIES, updated);
-    this.broadcastEnquiryChange(result);
-    return result;
+    const insertedRecord = {
+      ...data,
+      subject: data.subject || data.course_name || cleanSubject,
+      course_name: data.course_name || data.subject || cleanSubject,
+      admin_notes: data.admin_notes || data.notes || ''
+    };
+
+    // 5. Broadcast real-time change to all admin dashboards & connected devices
+    this.broadcastEnquiryChange(insertedRecord);
+    return insertedRecord;
   },
 
-  async updateEnquiryStatus(id, status) {
-    let result = null;
-
-    if (isSupabaseConfigured && supabase && isUUID(id)) {
-      const { data, error } = await supabase.from('enquiries').update({ status }).eq('id', id).select().single();
-      if (!error && data) {
-        result = data;
-      } else if (error) {
-        console.error('Supabase updateEnquiryStatus error:', error);
-        throw new Error(error.message || 'Failed to update enquiry in database');
-      }
+  async updateEnquiryStatus(id, newStatus, adminNotes = null) {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Database connection is not available.');
     }
 
-    const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const updated = list.map(e => (String(e.id) === String(id) ? { ...e, status } : e));
-    setLocal(STORAGE_KEYS.ENQUIRIES, updated);
-    this.broadcastEnquiryChange(result || { id, status });
-    return result || updated.find(e => String(e.id) === String(id));
+    // Normalize status for Postgres DB check constraint compatibility
+    const statusNormalizationMap = {
+      'new': 'New',
+      'read': 'Contacted',
+      'contacted': 'Contacted',
+      'in progress': 'In Progress',
+      'resolved': 'Closed',
+      'closed': 'Closed',
+      'archived': 'Closed'
+    };
+
+    const requestedStatus = String(newStatus || 'New').trim();
+    const normalizedCapital = requestedStatus.charAt(0).toUpperCase() + requestedStatus.slice(1);
+
+    const updatePayload = {
+      status: normalizedCapital
+    };
+
+    if (adminNotes !== null && adminNotes !== undefined) {
+      updatePayload.notes = String(adminNotes).trim();
+    }
+
+    let resultData = null;
+    let queryError = null;
+
+    // Try primary update
+    const res1 = await supabase
+      .from('enquiries')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (res1.error && (res1.error.code === '23514' || res1.error.message?.includes('violates check constraint'))) {
+      // Fallback for check constraint if custom status is not yet in DB constraint
+      const safeFallback = statusNormalizationMap[requestedStatus.toLowerCase()] || 'Contacted';
+      const res2 = await supabase
+        .from('enquiries')
+        .update({ ...updatePayload, status: safeFallback })
+        .eq('id', id)
+        .select()
+        .single();
+      resultData = res2.data;
+      queryError = res2.error;
+    } else {
+      resultData = res1.data;
+      queryError = res1.error;
+    }
+
+    if (queryError) {
+      console.error('Supabase updateEnquiryStatus error:', queryError);
+      throw new Error(queryError.message || 'Failed to update enquiry status in database.');
+    }
+
+    const formatted = {
+      ...resultData,
+      subject: resultData.subject || resultData.course_name,
+      course_name: resultData.course_name || resultData.subject,
+      admin_notes: resultData.admin_notes || resultData.notes || ''
+    };
+
+    this.broadcastEnquiryChange(formatted);
+    return formatted;
   },
 
   async deleteEnquiry(id) {
-    if (isSupabaseConfigured && supabase && isUUID(id)) {
-      const { error } = await supabase.from('enquiries').delete().eq('id', id);
-      if (error) {
-        console.error('Supabase deleteEnquiry error:', error);
-        throw new Error(error.message || 'Failed to delete enquiry from database');
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Database connection is not available.');
     }
 
-    const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const filtered = list.filter(e => String(e.id) !== String(id));
-    setLocal(STORAGE_KEYS.ENQUIRIES, filtered);
+    const { error } = await supabase
+      .from('enquiries')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Supabase deleteEnquiry error:', error);
+      throw new Error(error.message || 'Failed to delete enquiry from database.');
+    }
+
     this.broadcastEnquiryChange({ id, deleted: true });
     return true;
   },
+
 
   // ============================================================================
   // 8. FAQ
