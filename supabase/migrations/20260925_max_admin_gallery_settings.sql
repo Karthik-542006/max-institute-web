@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- MAX Educational Institution — Admin Panel, Gallery & Settings Migration
--- SQL File: 20260925_max_admin_gallery_settings.sql
+-- File: supabase/migrations/20260925_max_admin_gallery_settings.sql
 -- ==============================================================================
 
 -- 1. Enable UUID Extension
@@ -142,6 +142,38 @@ BEGIN
   END IF;
 END $$;
 
+-- Seed default initial row if table is empty (omitting id column so PostgreSQL handles auto-generation regardless of type UUID or INT)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.site_settings) THEN
+    INSERT INTO public.site_settings (
+      institute_name,
+      institution_name,
+      phone,
+      phone2,
+      whatsapp,
+      email,
+      address,
+      opening_time,
+      closing_time,
+      website_title,
+      website_description
+    ) VALUES (
+      'MAX Educational Institution',
+      'MAX Educational Institution',
+      '+91 99654 68185',
+      '+91 63809 27568',
+      '+91 99654 68185',
+      'contact@maxinstitute.edu.in',
+      '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
+      '09:00 AM',
+      '06:00 PM',
+      'MAX Educational Institution | Azhagiyamandapam',
+      'Professional training in Computer Courses, Typing (English & Tamil), and Technical Fundamentals in Azhagiyamandapam.'
+    );
+  END IF;
+END $$;
+
 
 -- 4. PROFILES & ROLE-BASED ACCESS CONTROL
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -199,9 +231,20 @@ CREATE POLICY "Public full access to admin_activity_log" ON public.admin_activit
 
 
 -- 8. REALTIME CONFIGURATION
-ALTER PUBLICATION supabase_realtime ADD TABLE public.site_settings;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.gallery;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_activity_log;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'site_settings') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.site_settings;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'gallery') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.gallery;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'admin_activity_log') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_activity_log;
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
 
 -- 9. STORAGE BUCKET CONFIGURATION
 INSERT INTO storage.buckets (id, name, public) VALUES ('gallery', 'gallery', true) ON CONFLICT (id) DO UPDATE SET public = true;
