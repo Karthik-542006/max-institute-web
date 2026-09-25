@@ -23,11 +23,21 @@ export default function Courses() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isMounted = true;
     async function load() {
       const data = await dataService.getCourses();
-      setCourses(data.filter(c => c.is_active));
+      if (isMounted) {
+        setCourses(data.filter(c => c.is_active));
+      }
     }
     load();
+    const unsubscribe = dataService.subscribeToCourses(() => {
+      load();
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const categories = ['All', 'Computer Courses', 'Typing Courses', 'Technical Courses'];

@@ -460,150 +460,239 @@ function isUUID(str) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+function ensureUUID(id) {
+  if (id && isUUID(id)) return String(id);
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // RFC4122 v4 compliant fallback UUID generator
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * Universal Multi-System Real-Time Table Synchronizer
+ * Subscribes across:
+ * 1. Supabase Postgres Realtime (World-wide real-time WebSocket)
+ * 2. Cross-tab BroadcastChannel (Instant multi-tab sync on same machine)
+ * 3. Local CustomEvent (In-window sync)
+ * 4. Tab Visibility & Focus heartbeat (Refetches when waking up or switching tabs)
+ */
+function subscribeToTableRealtime(tableName, customEventName, channelName, callback) {
+  const handleLocal = (e) => callback(e?.detail || null);
+
+  // 1. Same-window local event listener
+  if (typeof window !== 'undefined') {
+    window.addEventListener(customEventName, handleLocal);
+  }
+
+  // 2. Cross-tab BroadcastChannel
+  let bc = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      bc = new BroadcastChannel(channelName);
+      bc.onmessage = (event) => {
+        callback(event.data?.detail || null);
+      };
+    } catch (e) {
+      console.warn(`BroadcastChannel not supported for ${channelName}`, e);
+    }
+  }
+
+  // 3. Supabase Realtime WebSocket (across other systems & devices)
+  let supabaseChannel = null;
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const channelId = `realtime:${tableName}:${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      supabaseChannel = supabase
+        .channel(channelId)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: tableName },
+          (payload) => {
+            callback(payload.new || payload.old || payload);
+          }
+        )
+        .subscribe((status, err) => {
+          if (err) {
+            console.warn(`Supabase Realtime (${tableName}) warning:`, err.message || err);
+          }
+        });
+    } catch (e) {
+      console.warn(`Supabase Realtime subscription error (${tableName}):`, e);
+    }
+  }
+
+  // 4. Tab Focus & Visibility Refetch (ensures device is 100% current on wake/focus)
+  const handleFocus = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      callback({ type: 'VISIBILITY_SYNC' });
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+  }
+
+  // 5. Cleanup
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener(customEventName, handleLocal);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    }
+    if (bc) {
+      try { bc.close(); } catch (e) {}
+    }
+    if (supabaseChannel && supabase) {
+      try { supabase.removeChannel(supabaseChannel); } catch (e) {}
+    }
+  };
+}
+
+function broadcastTableEvent(customEventName, channelName, actionType, detail = null) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(customEventName, { detail }));
+  }
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(channelName);
+      bc.postMessage({ type: actionType, detail });
+      bc.close();
+    } catch (e) {}
+  }
+}
+
 // Unified Data Service API
 export const dataService = {
-  // SETTINGS
+  // ============================================================================
+  // 1. SETTINGS & INSTITUTIONAL CONFIGURATION
+  // ============================================================================
   async getSettings() {
     let settings = null;
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('site_settings').select('*').limit(1).maybeSingle();
+        const { data, error } = await supabase
+          .from('site_settings')
+          .select('*')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
         if (!error && data) {
           settings = data;
+          setLocal(STORAGE_KEYS.SETTINGS, settings);
+          idbSet(STORAGE_KEYS.SETTINGS, settings);
         }
       } catch (e) {
         console.warn('Supabase fetch settings failed, falling back to local storage', e);
       }
     }
+
     if (!settings) {
       settings = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
     }
-    
-    // Auto-Sanitization Script: Ensure phone & phone2 formatting in perfect order
-    let modified = false;
-    if (!settings) {
-      settings = { ...DEFAULT_SETTINGS };
-      modified = true;
-    }
+
+    // Auto-sanitization
     if (!settings.phone || settings.phone === '063809 27568' || settings.phone.includes('063809')) {
       settings.phone = '+91 99654 68185';
-      modified = true;
     }
-    if (!settings.phone2 || settings.phone2 === '063809 27568' || settings.phone2 === '63809 27568') {
-      settings.phone2 = '+91 63809 27568';
-      modified = true;
+    if (!settings.phone2) {
+      settings.phone2 = settings.whatsapp || '+91 63809 27568';
     }
-    if (settings.address && (settings.address.includes('Near Nagercoil Bus Stop') || settings.address.includes('Junction,'))) {
-      settings.address = settings.address.replace(/,?\s*Near Nagercoil Bus Stop/g, '').replace(/,?\s*Junction/g, '').trim();
-      modified = true;
+    if (!settings.whatsapp) {
+      settings.whatsapp = '+91 63809 27568';
     }
-    if (modified) {
-      setLocal(STORAGE_KEYS.SETTINGS, settings);
-      idbSet(STORAGE_KEYS.SETTINGS, settings);
-      if (isSupabaseConfigured && supabase && settings.id && settings.id !== 'default-settings') {
-        supabase.from('site_settings').upsert({ id: settings.id, phone: '+91 99654 68185', phone2: '+91 63809 27568' }).catch(() => {});
-      }
-    }
+
     return settings;
   },
 
-  // SETTINGS & REAL-TIME MULTI-DEVICE SYNC ALGORITHM
   broadcastSettingsChange(detail = null) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_settings_updated', { detail }));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_settings_sync_channel');
-        bc.postMessage({ type: 'SETTINGS_CHANGED', detail });
-        bc.close();
-      } catch (e) {}
-    }
+    broadcastTableEvent('max_settings_updated', 'max_settings_sync_channel', 'SETTINGS_CHANGED', detail);
   },
 
   subscribeToSettings(callback) {
-    const handleLocal = (e) => callback(e.detail || null);
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('max_settings_updated', handleLocal);
-    }
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel('max_settings_sync_channel');
-        channel.onmessage = (event) => {
-          if (event.data?.type === 'SETTINGS_CHANGED') {
-            callback(event.data.detail);
-          }
-        };
-      } catch (e) {}
-    }
-
-    let supabaseChannel = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        supabaseChannel = supabase
-          .channel('public:site_settings:realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'site_settings' },
-            (payload) => {
-              callback(payload.new || payload.old || payload);
-            }
-          )
-          .subscribe();
-      } catch (e) {
-        console.warn('Supabase site_settings realtime subscription failed:', e);
-      }
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('max_settings_updated', handleLocal);
-      }
-      if (channel) channel.close();
-      if (supabaseChannel && supabase) {
-        supabase.removeChannel(supabaseChannel);
-      }
-    };
+    return subscribeToTableRealtime('site_settings', 'max_settings_updated', 'max_settings_sync_channel', callback);
   },
 
   async updateSettings(updates) {
-    const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    const current = await this.getSettings();
     const merged = { ...DEFAULT_SETTINGS, ...current, ...updates, updated_at: new Date().toISOString() };
-    
-    // Auto-sanitization fallback checks
-    if (!merged.phone) merged.phone = '+91 99654 68185';
-    if (!merged.phone2) merged.phone2 = '+91 63809 27568';
-    if (!merged.email) merged.email = 'contact@maxinstitute.edu.in';
-    if (!merged.address) merged.address = '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
 
     let result = merged;
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: existing } = await supabase.from('site_settings').select('*').limit(1).maybeSingle();
-        const payload = existing?.id ? { ...existing, ...merged, id: existing.id } : { ...merged };
-        const { data, error } = await supabase.from('site_settings').upsert(payload).select().single();
+        // Fetch existing canonical row
+        const { data: existing } = await supabase
+          .from('site_settings')
+          .select('*')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const targetId = existing?.id || 'fbfe01cc-bd44-4777-8dcb-8be83d226934';
+
+        // Strictly allowed columns on site_settings PostgreSQL table
+        const cleanPayload = {
+          id: targetId,
+          institute_name: merged.institute_name || merged.institution_name || 'MAX Educational Institution',
+          institution_name: merged.institution_name || merged.institute_name || 'MAX Educational Institution',
+          tagline: merged.tagline || 'Empowering Students With Skills for Tomorrow',
+          phone: merged.phone || '+91 99654 68185',
+          whatsapp: merged.whatsapp || merged.phone2 || '+91 63809 27568',
+          email: merged.email || 'contact@maxinstitute.edu.in',
+          address: merged.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
+          opening_time: merged.opening_time || '09:00 AM',
+          closing_time: merged.closing_time || '06:00 PM',
+          google_rating: Number(merged.google_rating || 4.9),
+          total_google_reviews: parseInt(merged.total_google_reviews) || 110,
+          google_maps_url: merged.google_maps_url || 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+          logo_url: merged.logo_url || null,
+          favicon_url: merged.favicon_url || null,
+          website_title: merged.website_title || 'MAX Educational Institution | Azhagiyamandapam',
+          website_description: merged.website_description || 'Professional training in Computer Courses, Typing (English & Tamil), and Technical Fundamentals in Azhagiyamandapam.',
+          facebook_url: merged.facebook_url || 'https://facebook.com',
+          instagram_url: merged.instagram_url || 'https://instagram.com',
+          youtube_url: merged.youtube_url || 'https://youtube.com',
+          updated_by: 'admin',
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await supabase.from('site_settings').upsert(cleanPayload).select().single();
         if (!error && data) {
-          result = data;
+          result = { ...merged, ...data, phone2: data.whatsapp || merged.phone2 };
         } else if (error) {
-          console.error('Supabase updateSettings error:', error);
+          console.error('Supabase updateSettings database error:', error);
+          throw new Error(error.message || 'Database rejected settings update');
         }
       } catch (e) {
-        console.warn('Supabase updateSettings failed, saving locally', e);
+        console.warn('Supabase updateSettings error:', e);
+        throw e;
       }
     }
-    
+
     setLocal(STORAGE_KEYS.SETTINGS, result);
     idbSet(STORAGE_KEYS.SETTINGS, result);
     this.broadcastSettingsChange(result);
     return result;
   },
 
-  // COURSES
+  // ============================================================================
+  // 2. COURSES
+  // ============================================================================
+  broadcastCoursesChange(detail = null) {
+    broadcastTableEvent('max_courses_updated', 'max_courses_sync_channel', 'COURSES_CHANGED', detail);
+  },
+
+  subscribeToCourses(callback) {
+    return subscribeToTableRealtime('courses', 'max_courses_updated', 'max_courses_sync_channel', callback);
+  },
+
   async getCourses() {
-    const deletedIds = new Set(getLocal('max_courses_deleted_ids', []).map(String));
     let items = null;
 
     if (isSupabaseConfigured && supabase) {
@@ -612,14 +701,13 @@ export const dataService = {
           .from('courses')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && Array.isArray(data)) {
-          const supabaseIds = new Set(data.map(d => String(d.id)));
-          const localItems = getLocal(STORAGE_KEYS.COURSES, []);
-          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
 
-          let combined = [...data, ...localOnly];
-          items = combined.filter(c => !deletedIds.has(String(c.id)));
+        if (!error && Array.isArray(data)) {
+          // Authoritative cloud data: overwrite local cache without resurrecting deleted items
+          items = data;
           setLocal(STORAGE_KEYS.COURSES, items);
+          idbSet(STORAGE_KEYS.COURSES, items);
+          return items;
         } else if (error) {
           console.warn('Supabase getCourses notice:', error.message || error);
         }
@@ -629,105 +717,111 @@ export const dataService = {
     }
 
     if (items === null) {
-      let localItems = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-      items = localItems.filter(c => !deletedIds.has(String(c.id)));
+      items = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
     }
 
     return items;
   },
 
   async addCourse(course) {
-    const newId = (course.id && isUUID(course.id))
-      ? course.id
-      : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `course-${Date.now()}`);
+    const newId = ensureUUID(course.id);
+    const cleanTitle = (course.title || 'Untitled Course').trim();
+    const baseSlug = course.slug || cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const uniqueSlug = `${baseSlug || 'course'}-${Math.random().toString(36).slice(2, 6)}`;
 
     const newCourse = {
-      ...course,
       id: newId,
-      is_active: course.is_active ?? true,
-      created_at: course.created_at || new Date().toISOString()
+      title: cleanTitle,
+      slug: uniqueSlug,
+      short_description: course.short_description || '',
+      description: course.description || '',
+      category: course.category || 'Computer Courses',
+      duration: course.duration || 'Flexible',
+      level: course.level || 'Beginner to Advanced',
+      icon: course.icon || 'Monitor',
+      image_url: course.image_url || null,
+      display_order: parseInt(course.display_order) || 1,
+      is_active: course.is_active !== false,
+      created_at: course.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const updatedLocal = [newCourse, ...currentLocal.filter(c => String(c.id) !== String(newCourse.id))];
-    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
-
-    const deletedIds = getLocal('max_courses_deleted_ids', []);
-    if (deletedIds.includes(String(newCourse.id))) {
-      setLocal('max_courses_deleted_ids', deletedIds.filter(id => String(id) !== String(newCourse.id)));
-    }
+    let result = newCourse;
 
     if (isSupabaseConfigured && supabase) {
-      try {
-        const payload = { ...newCourse };
-        if (!isUUID(payload.id)) delete payload.id;
-        const { data, error } = await supabase.from('courses').insert(payload).select().single();
-        if (!error && data) {
-          const latestLocal = getLocal(STORAGE_KEYS.COURSES, updatedLocal);
-          const replaced = latestLocal.map(x => (String(x.id) === String(newCourse.id) ? data : x));
-          setLocal(STORAGE_KEYS.COURSES, replaced);
-          return data;
-        }
-      } catch (e) {
-        console.warn('Supabase addCourse failed', e);
+      const { data, error } = await supabase.from('courses').insert(newCourse).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase addCourse error:', error);
+        throw new Error(error.message || 'Failed to save course to database');
       }
     }
 
-    return newCourse;
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const updatedLocal = [...currentLocal.filter(c => String(c.id) !== String(result.id)), result];
+    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
+    idbSet(STORAGE_KEYS.COURSES, updatedLocal);
+    this.broadcastCoursesChange(result);
+    return result;
   },
 
   async updateCourse(id, updates) {
     const stringId = String(id);
-    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const updatedLocal = currentLocal.map(c => (String(c.id) === stringId ? { ...c, ...updates } : c));
-    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
+    const cleanUpdates = { ...updates, updated_at: new Date().toISOString() };
+    delete cleanUpdates.id;
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        if (isUUID(id)) {
-          const { data, error } = await supabase.from('courses').update(updates).eq('id', id).select().single();
-          if (!error && data) {
-            const latestLocal = getLocal(STORAGE_KEYS.COURSES, updatedLocal);
-            const replaced = latestLocal.map(x => (String(x.id) === stringId ? { ...x, ...data } : x));
-            setLocal(STORAGE_KEYS.COURSES, replaced);
-            return data;
-          }
-        }
-      } catch (e) {
-        console.warn('Supabase updateCourse failed', e);
+    let result = null;
+
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { data, error } = await supabase.from('courses').update(cleanUpdates).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateCourse error:', error);
+        throw new Error(error.message || 'Failed to update course in database');
       }
     }
 
-    return updatedLocal.find(c => String(c.id) === stringId);
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const updatedLocal = currentLocal.map(c => (String(c.id) === stringId ? { ...c, ...cleanUpdates, ...(result || {}) } : c));
+    setLocal(STORAGE_KEYS.COURSES, updatedLocal);
+    idbSet(STORAGE_KEYS.COURSES, updatedLocal);
+    this.broadcastCoursesChange(result || { id, ...cleanUpdates });
+    return result || updatedLocal.find(c => String(c.id) === stringId);
   },
 
   async deleteCourse(id) {
     const stringId = String(id);
-    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
-    const filteredLocal = currentLocal.filter(c => String(c.id) !== stringId);
-    setLocal(STORAGE_KEYS.COURSES, filteredLocal);
 
-    const deletedIds = getLocal('max_courses_deleted_ids', []);
-    if (!deletedIds.includes(stringId)) {
-      setLocal('max_courses_deleted_ids', [...deletedIds, stringId]);
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        if (isUUID(id)) {
-          await supabase.from('courses').delete().eq('id', id);
-        }
-      } catch (e) {
-        console.warn('Supabase deleteCourse failed', e);
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { error } = await supabase.from('courses').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase deleteCourse error:', error);
+        throw new Error(error.message || 'Failed to delete course from database');
       }
     }
 
+    const currentLocal = getLocal(STORAGE_KEYS.COURSES, DEFAULT_COURSES);
+    const filteredLocal = currentLocal.filter(c => String(c.id) !== stringId);
+    setLocal(STORAGE_KEYS.COURSES, filteredLocal);
+    idbSet(STORAGE_KEYS.COURSES, filteredLocal);
+    this.broadcastCoursesChange({ id: stringId, deleted: true });
     return true;
   },
 
-  // FACULTY / INSTRUCTORS
+  // ============================================================================
+  // 3. FACULTY / INSTRUCTORS
+  // ============================================================================
+  broadcastFacultyChange(detail = null) {
+    broadcastTableEvent('max_faculty_updated', 'max_faculty_sync_channel', 'FACULTY_CHANGED', detail);
+  },
+
+  subscribeToFaculty(callback) {
+    return subscribeToTableRealtime('faculty', 'max_faculty_updated', 'max_faculty_sync_channel', callback);
+  },
+
   async getFaculty() {
-    const deletedIds = new Set(getLocal('max_faculty_deleted_ids', []).map(String));
     let items = null;
 
     if (isSupabaseConfigured && supabase) {
@@ -736,134 +830,111 @@ export const dataService = {
           .from('faculty')
           .select('*')
           .order('display_order', { ascending: true });
-        if (!error && Array.isArray(data)) {
-          const supabaseIds = new Set(data.map(d => String(d.id)));
-          const localItems = getLocal(STORAGE_KEYS.FACULTY, []);
-          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
 
-          let combined = [...data, ...localOnly];
-          items = combined.filter(f => !deletedIds.has(String(f.id)));
+        if (!error && Array.isArray(data)) {
+          // Authoritative cloud data: overwrite local cache without resurrecting deleted items
+          items = data;
           setLocal(STORAGE_KEYS.FACULTY, items);
+          idbSet(STORAGE_KEYS.FACULTY, items);
+          return items;
         } else if (error) {
           console.warn('Supabase getFaculty notice:', error.message || error);
         }
       } catch (e) {
-        console.warn('Supabase faculty failed, using fallback', e);
+        console.warn('Supabase faculty failed', e);
       }
     }
 
-    if (items === null || (Array.isArray(items) && items.length === 0 && deletedIds.size === 0)) {
-      let localItems = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-      if (!Array.isArray(localItems) || localItems.length === 0) {
-        localItems = DEFAULT_FACULTY;
-        setLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-      }
-      items = localItems.filter(f => !deletedIds.has(String(f.id)));
+    if (items === null) {
+      items = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
     }
 
     return items;
   },
 
   async addFaculty(member) {
-    const newId = (member.id && isUUID(member.id))
-      ? member.id
-      : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `faculty-${Date.now()}`);
+    const newId = ensureUUID(member.id);
 
     const newMember = {
-      ...member,
       id: newId,
-      is_active: member.is_active ?? true,
-      display_order: member.display_order || 1,
+      name: (member.name || '').trim(),
+      designation: member.designation || 'Instructor',
+      specialization: member.specialization || '',
+      experience: member.experience || '5+ Years',
+      photo_url: member.photo_url || null,
+      description: member.description || '',
+      display_order: parseInt(member.display_order) || 1,
+      is_active: member.is_active !== false,
       created_at: member.created_at || new Date().toISOString()
     };
 
-    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const updatedLocal = [newMember, ...currentLocal.filter(f => String(f.id) !== String(newMember.id))];
-    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
-
-    const deletedIds = getLocal('max_faculty_deleted_ids', []);
-    if (deletedIds.includes(String(newMember.id))) {
-      setLocal('max_faculty_deleted_ids', deletedIds.filter(id => String(id) !== String(newMember.id)));
-    }
+    let result = newMember;
 
     if (isSupabaseConfigured && supabase) {
-      try {
-        const payload = { ...newMember };
-        if (!isUUID(payload.id)) delete payload.id;
-        const { data, error } = await supabase.from('faculty').insert(payload).select().single();
-        if (!error && data) {
-          const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
-          const replaced = latestLocal.map(x => (String(x.id) === String(newMember.id) ? data : x));
-          setLocal(STORAGE_KEYS.FACULTY, replaced);
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
-          return data;
-        } else if (error) {
-          console.warn('Supabase addFaculty notice:', error.message || error);
-        }
-      } catch (e) {
-        console.warn('Supabase addFaculty failed', e);
+      const { data, error } = await supabase.from('faculty').insert(newMember).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase addFaculty error:', error);
+        throw new Error(error.message || 'Failed to add faculty to database');
       }
     }
 
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
-    return newMember;
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const updatedLocal = [...currentLocal.filter(f => String(f.id) !== String(result.id)), result];
+    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+    idbSet(STORAGE_KEYS.FACULTY, updatedLocal);
+    this.broadcastFacultyChange(result);
+    return result;
   },
 
   async updateFaculty(id, updates) {
     const stringId = String(id);
-    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const updatedLocal = currentLocal.map(f => (String(f.id) === stringId ? { ...f, ...updates } : f));
-    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+    const cleanUpdates = { ...updates };
+    delete cleanUpdates.id;
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        if (isUUID(id)) {
-          const { data, error } = await supabase.from('faculty').update(updates).eq('id', id).select().single();
-          if (!error && data) {
-            const latestLocal = getLocal(STORAGE_KEYS.FACULTY, updatedLocal);
-            const replaced = latestLocal.map(x => (String(x.id) === stringId ? { ...x, ...data } : x));
-            setLocal(STORAGE_KEYS.FACULTY, replaced);
-            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
-            return data;
-          }
-        }
-      } catch (e) {
-        console.warn('Supabase updateFaculty failed', e);
+    let result = null;
+
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { data, error } = await supabase.from('faculty').update(cleanUpdates).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateFaculty error:', error);
+        throw new Error(error.message || 'Failed to update faculty in database');
       }
     }
 
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
-    return updatedLocal.find(f => String(f.id) === stringId);
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const updatedLocal = currentLocal.map(f => (String(f.id) === stringId ? { ...f, ...cleanUpdates, ...(result || {}) } : f));
+    setLocal(STORAGE_KEYS.FACULTY, updatedLocal);
+    idbSet(STORAGE_KEYS.FACULTY, updatedLocal);
+    this.broadcastFacultyChange(result || { id, ...cleanUpdates });
+    return result || updatedLocal.find(f => String(f.id) === stringId);
   },
 
   async deleteFaculty(id) {
     const stringId = String(id);
 
-    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
-    const filteredLocal = currentLocal.filter(f => String(f.id) !== stringId);
-    setLocal(STORAGE_KEYS.FACULTY, filteredLocal);
-
-    const deletedIds = getLocal('max_faculty_deleted_ids', []);
-    if (!deletedIds.includes(stringId)) {
-      setLocal('max_faculty_deleted_ids', [...deletedIds, stringId]);
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        if (isUUID(id)) {
-          const { error } = await supabase.from('faculty').delete().eq('id', id);
-          if (error) console.warn('Supabase deleteFaculty notice:', error.message || error);
-        }
-      } catch (e) {
-        console.warn('Supabase deleteFaculty failed', e);
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { error } = await supabase.from('faculty').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase deleteFaculty error:', error);
+        throw new Error(error.message || 'Failed to delete faculty from database');
       }
     }
 
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('max_faculty_updated'));
+    const currentLocal = getLocal(STORAGE_KEYS.FACULTY, DEFAULT_FACULTY);
+    const filteredLocal = currentLocal.filter(f => String(f.id) !== stringId);
+    setLocal(STORAGE_KEYS.FACULTY, filteredLocal);
+    idbSet(STORAGE_KEYS.FACULTY, filteredLocal);
+    this.broadcastFacultyChange({ id: stringId, deleted: true });
     return true;
   },
 
-  // AUDIT LOGGING HELPER FOR MULTIPLE SYSTEM ADMINS
+  // ============================================================================
+  // 4. AUDIT ACTIVITY LOGGING
+  // ============================================================================
   async logAdminActivity(action, tableName = null, recordId = null, oldData = null, newData = null) {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -871,7 +942,7 @@ export const dataService = {
         const user = session?.data?.session?.user;
         const payload = {
           admin_id: user?.id || 'system-admin',
-          admin_email: user?.email || 'Admin@2006',
+          admin_email: user?.email || 'admin@maxinstitute.edu.in',
           action: String(action),
           table_name: tableName,
           record_id: recordId ? String(recordId) : null,
@@ -884,67 +955,18 @@ export const dataService = {
     }
   },
 
-  // GALLERY REALTIME & MULTI-ADMIN SYNC
+  // ============================================================================
+  // 5. GALLERY (Images & Videos)
+  // ============================================================================
   broadcastGalleryChange(detail = null) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_gallery_updated', { detail }));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_gallery_sync_channel');
-        bc.postMessage({ type: 'GALLERY_CHANGED', detail });
-        bc.close();
-      } catch (e) {}
-    }
+    broadcastTableEvent('max_gallery_updated', 'max_gallery_sync_channel', 'GALLERY_CHANGED', detail);
   },
 
   subscribeToGallery(callback) {
-    const handleLocal = () => callback();
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('max_gallery_updated', handleLocal);
-    }
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel('max_gallery_sync_channel');
-        channel.onmessage = (event) => {
-          if (event.data?.type === 'GALLERY_CHANGED') {
-            callback();
-          }
-        };
-      } catch (e) {}
-    }
-
-    let supabaseChannel = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        supabaseChannel = supabase
-          .channel('public:gallery:realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'gallery' },
-            () => callback()
-          )
-          .subscribe();
-      } catch (e) {}
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('max_gallery_updated', handleLocal);
-      }
-      if (channel) channel.close();
-      if (supabaseChannel && supabase) {
-        supabase.removeChannel(supabaseChannel);
-      }
-    };
+    return subscribeToTableRealtime('gallery', 'max_gallery_updated', 'max_gallery_sync_channel', callback);
   },
 
-  // GALLERY (Supports Images, Videos, 1000+ Items with IndexedDB & Supabase Sync)
   async getGallery(category = 'All') {
-    const deletedIds = new Set(getLocal('max_gallery_deleted_ids', []).map(String));
     let items = null;
 
     if (isSupabaseConfigured && supabase) {
@@ -955,16 +977,10 @@ export const dataService = {
         }
         const { data, error } = await query;
         if (!error && Array.isArray(data)) {
-          const supabaseIds = new Set(data.map(d => String(d.id)));
-          const localItems = await getStored(STORAGE_KEYS.GALLERY, []);
-          const localOnly = localItems.filter(l => !supabaseIds.has(String(l.id)) && !deletedIds.has(String(l.id)));
-
-          let combined = [...data, ...localOnly];
-          if (category && category !== 'All') {
-            combined = combined.filter(img => img.category?.toLowerCase() === category.toLowerCase());
-          }
-          items = combined.filter(img => !deletedIds.has(String(img.id)));
+          // Authoritative cloud data
+          items = data;
           await setStored(STORAGE_KEYS.GALLERY, items);
+          return items;
         } else if (error) {
           console.warn('Supabase getGallery notice:', error.message || error);
         }
@@ -978,7 +994,7 @@ export const dataService = {
       if (category && category !== 'All') {
         localItems = localItems.filter(img => img.category?.toLowerCase() === category.toLowerCase());
       }
-      items = localItems.filter(img => !deletedIds.has(String(img.id)));
+      items = localItems;
     }
 
     return items;
@@ -993,16 +1009,14 @@ export const dataService = {
     if (!Array.isArray(itemsArray) || itemsArray.length === 0) return [];
 
     const formattedItems = itemsArray.map((item, idx) => {
-      const newId = (item.id && isUUID(item.id))
-        ? item.id
-        : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `gal-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`);
-
+      const newId = ensureUUID(item.id);
       const fileUrl = item.file_url || item.image_url || '';
       const imageUrl = item.image_url || fileUrl;
 
       return {
-        ...item,
         id: newId,
+        title: item.title || 'Campus Photo',
+        description: item.description || '',
         media_type: item.media_type || (fileUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ? 'video' : 'image'),
         file_url: fileUrl,
         image_url: imageUrl,
@@ -1012,67 +1026,31 @@ export const dataService = {
         file_size: item.file_size || null,
         mime_type: item.mime_type || null,
         category: item.category || 'Institute',
+        display_order: parseInt(item.display_order) || 0,
         is_published: item.is_published !== false,
-        is_featured: item.is_featured ?? true,
+        is_featured: item.is_featured ?? false,
         uploaded_by: item.uploaded_by || 'admin',
-        created_at: item.created_at || new Date(Date.now() - idx * 100).toISOString()
+        created_at: item.created_at || new Date(Date.now() - idx * 100).toISOString(),
+        updated_at: new Date().toISOString()
       };
     });
 
-    // 1. Update local & IndexedDB storage
-    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-    const existingMap = new Map(currentLocal.map(x => [String(x.id), x]));
-
-    formattedItems.forEach(item => {
-      existingMap.set(String(item.id), item);
-    });
-
-    const updatedList = Array.from(existingMap.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    await setStored(STORAGE_KEYS.GALLERY, updatedList);
-
-    // Clear from deleted tracking if re-added
-    const deletedIds = getLocal('max_gallery_deleted_ids', []);
-    const addedIdsSet = new Set(formattedItems.map(i => String(i.id)));
-    const filteredDeleted = deletedIds.filter(id => !addedIdsSet.has(String(id)));
-    setLocal('max_gallery_deleted_ids', filteredDeleted);
-
-    // 2. Batch insert into Supabase if configured
     if (isSupabaseConfigured && supabase) {
       try {
-        const CHUNK_SIZE = 50;
-        const insertedFromSupabase = [];
-
-        for (let i = 0; i < formattedItems.length; i += CHUNK_SIZE) {
-          const chunk = formattedItems.slice(i, i + CHUNK_SIZE).map(item => {
-            const payload = { ...item };
-            if (!isUUID(payload.id)) delete payload.id;
-            return payload;
-          });
-
-          const { data, error } = await supabase.from('gallery').insert(chunk).select();
-          if (!error && Array.isArray(data)) {
-            insertedFromSupabase.push(...data);
-          } else if (error) {
-            console.warn('Supabase batch insert notice:', error.message || error);
-            // Storage cleanup on DB insert failure
-            for (const failedItem of chunk) {
-              if (failedItem.storage_path) {
-                deleteStorageFile('gallery', failedItem.storage_path).catch(() => {});
-              }
-            }
-          }
-        }
-
-        if (insertedFromSupabase.length > 0) {
-          const latestLocal = await getStored(STORAGE_KEYS.GALLERY, updatedList);
-          const sbMap = new Map(insertedFromSupabase.map(d => [String(d.id), d]));
-          const replaced = latestLocal.map(x => sbMap.get(String(x.id)) || x);
-          await setStored(STORAGE_KEYS.GALLERY, replaced);
+        const { data, error } = await supabase.from('gallery').insert(formattedItems).select();
+        if (error) {
+          console.error('Supabase addGalleryItems error:', error);
+          throw new Error(error.message || 'Failed to save gallery items to database');
         }
       } catch (e) {
-        console.warn('Supabase addGalleryItems batch failed', e);
+        console.warn('Supabase addGalleryItems batch notice:', e);
+        throw e;
       }
     }
+
+    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const updatedList = [...formattedItems, ...currentLocal.filter(g => !formattedItems.some(f => String(f.id) === String(g.id)))];
+    await setStored(STORAGE_KEYS.GALLERY, updatedList);
 
     this.logAdminActivity('UPLOADED_GALLERY_MEDIA', 'gallery', formattedItems.map(i => i.id).join(','), null, formattedItems);
     this.broadcastGalleryChange(formattedItems);
@@ -1080,34 +1058,28 @@ export const dataService = {
   },
 
   async updateGalleryItem(id, updates) {
-    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-    const target = currentLocal.find(g => String(g.id) === String(id));
-    if (!target) return null;
+    const stringId = String(id);
+    const cleanUpdates = { ...updates, updated_at: new Date().toISOString() };
+    delete cleanUpdates.id;
 
-    const merged = { ...target, ...updates, updated_at: new Date().toISOString() };
-
-    const updatedList = currentLocal.map(g => (String(g.id) === String(id) ? merged : g));
-    await setStored(STORAGE_KEYS.GALLERY, updatedList);
+    let result = null;
 
     if (isSupabaseConfigured && supabase && isUUID(id)) {
-      try {
-        const { data, error } = await supabase.from('gallery').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          const replaced = updatedList.map(g => (String(g.id) === String(id) ? data : g));
-          await setStored(STORAGE_KEYS.GALLERY, replaced);
-        }
-      } catch (e) {
-        console.warn('Supabase updateGalleryItem failed', e);
+      const { data, error } = await supabase.from('gallery').update(cleanUpdates).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateGalleryItem error:', error);
+        throw new Error(error.message || 'Failed to update gallery item in database');
       }
     }
 
-    const actionName = updates.is_published !== undefined 
-      ? (updates.is_published ? 'PUBLISHED_GALLERY_MEDIA' : 'UNPUBLISHED_GALLERY_MEDIA')
-      : 'UPDATED_GALLERY_MEDIA';
+    const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    const updatedList = currentLocal.map(g => (String(g.id) === stringId ? { ...g, ...cleanUpdates, ...(result || {}) } : g));
+    await setStored(STORAGE_KEYS.GALLERY, updatedList);
 
-    this.logAdminActivity(actionName, 'gallery', id, target, merged);
-    this.broadcastGalleryChange(merged);
-    return merged;
+    this.broadcastGalleryChange(result || { id, ...cleanUpdates });
+    return result || updatedList.find(g => String(g.id) === stringId);
   },
 
   async deleteGalleryItem(id) {
@@ -1116,104 +1088,36 @@ export const dataService = {
 
   async deleteGalleryItems(idsArray) {
     if (!Array.isArray(idsArray) || idsArray.length === 0) return true;
-
     const idsSet = new Set(idsArray.map(String));
 
-    // 1. Delete from local IndexedDB & LocalStorage
+    if (isSupabaseConfigured && supabase) {
+      const validUUIDs = idsArray.filter(isUUID);
+      if (validUUIDs.length > 0) {
+        const { error } = await supabase.from('gallery').delete().in('id', validUUIDs);
+        if (error) {
+          console.error('Supabase deleteGalleryItems error:', error);
+          throw new Error(error.message || 'Failed to delete gallery items from database');
+        }
+      }
+    }
+
     const currentLocal = await getStored(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
-    const itemsToDelete = currentLocal.filter(g => idsSet.has(String(g.id)));
     const filteredLocal = currentLocal.filter(g => !idsSet.has(String(g.id)));
     await setStored(STORAGE_KEYS.GALLERY, filteredLocal);
 
-    // 2. Track deleted IDs
-    const deletedIds = getLocal('max_gallery_deleted_ids', []);
-    const updatedDeleted = Array.from(new Set([...deletedIds, ...idsArray.map(String)]));
-    setLocal('max_gallery_deleted_ids', updatedDeleted);
-
-    // 3. Delete files from Storage & records from Supabase DB
-    for (const item of itemsToDelete) {
-      if (item.storage_path) {
-        deleteStorageFile('gallery', item.storage_path).catch(() => {});
-      }
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const validUUIDs = idsArray.filter(isUUID);
-        if (validUUIDs.length > 0) {
-          const { error } = await supabase.from('gallery').delete().in('id', validUUIDs);
-          if (error) console.warn('Supabase deleteGalleryItems notice:', error.message || error);
-        }
-      } catch (e) {
-        console.warn('Supabase deleteGalleryItems failed', e);
-      }
-    }
-
-    this.logAdminActivity('DELETED_GALLERY_MEDIA', 'gallery', idsArray.join(','), itemsToDelete, null);
     this.broadcastGalleryChange(idsArray);
     return true;
   },
 
-  // REVIEWS & REAL-TIME MULTI-DEVICE SYNC ALGORITHM
+  // ============================================================================
+  // 6. REVIEWS
+  // ============================================================================
   broadcastReviewChange(detail = null) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_review_changed', { detail }));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_reviews_sync_channel');
-        bc.postMessage({ type: 'REVIEW_CHANGED', detail });
-        bc.close();
-      } catch (e) {}
-    }
+    broadcastTableEvent('max_review_changed', 'max_reviews_sync_channel', 'REVIEW_CHANGED', detail);
   },
 
   subscribeToReviews(callback) {
-    const handleLocal = (e) => callback(e.detail || null);
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('max_review_changed', handleLocal);
-    }
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel('max_reviews_sync_channel');
-        channel.onmessage = (event) => {
-          if (event.data?.type === 'REVIEW_CHANGED') {
-            callback(event.data.detail);
-          }
-        };
-      } catch (e) {}
-    }
-
-    let supabaseChannel = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        supabaseChannel = supabase
-          .channel('public:reviews:realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'reviews' },
-            (payload) => {
-              callback(payload.new || payload.old || payload);
-            }
-          )
-          .subscribe();
-      } catch (e) {
-        console.warn('Supabase reviews realtime subscription failed:', e);
-      }
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('max_review_changed', handleLocal);
-      }
-      if (channel) channel.close();
-      if (supabaseChannel && supabase) {
-        supabase.removeChannel(supabaseChannel);
-      }
-    };
+    return subscribeToTableRealtime('reviews', 'max_review_changed', 'max_reviews_sync_channel', callback);
   },
 
   async getReviews() {
@@ -1221,18 +1125,18 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('reviews').select('*').order('created_at', { ascending: false });
-        if (!error && data) {
+        if (!error && Array.isArray(data)) {
           list = data;
         }
       } catch (e) {
         console.warn('Supabase reviews failed', e);
       }
     }
+
     if (!list || list.length === 0) {
       list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
     }
 
-    // Ranking algorithm: Featured (Admin priority) -> Rating (5 to 1) -> Newest Date
     const sorted = [...list].sort((a, b) => {
       const featA = a.is_featured ? 1 : 0;
       const featB = b.is_featured ? 1 : 0;
@@ -1250,144 +1154,95 @@ export const dataService = {
   },
 
   async addReview(review) {
-    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `rev-${Date.now()}`;
+    const newId = ensureUUID(review.id);
     const newRev = {
-      ...review,
-      id: review.id || defaultId,
-      source: review.source || 'Direct Submission',
+      id: newId,
+      student_name: (review.student_name || 'Student').trim(),
+      review: (review.review || '').trim(),
+      rating: Math.min(5, Math.max(1, parseInt(review.rating) || 5)),
+      source: review.source || 'Google Review',
+      photo_url: review.photo_url || null,
       is_featured: review.is_featured ?? true,
       created_at: review.created_at || new Date().toISOString()
     };
+
     let result = newRev;
+
     if (isSupabaseConfigured && supabase) {
-      try {
-        const payload = { ...newRev };
-        if (payload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.id)) {
-          delete payload.id;
-        }
-        const { data, error } = await supabase.from('reviews').insert(payload).select().single();
-        if (!error && data) result = data;
-        else if (error) console.warn('Supabase addReview error:', error);
-      } catch (e) {
-        console.warn('Supabase addReview failed, saving locally', e);
+      const { data, error } = await supabase.from('reviews').insert(newRev).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase addReview error:', error);
+        throw new Error(error.message || 'Failed to save review to database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
-    const updated = [result, ...list.filter(r => r.id !== result.id)];
+    const updated = [result, ...list.filter(r => String(r.id) !== String(result.id))];
     setLocal(STORAGE_KEYS.REVIEWS, updated);
     this.broadcastReviewChange(result);
     return result;
   },
 
   async updateReview(id, updates) {
+    const cleanUpdates = { ...updates };
+    delete cleanUpdates.id;
+
     let result = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('reviews').update(updates).eq('id', id).select().single();
-        if (!error && data) result = data;
-      } catch (e) {
-        console.warn('Supabase updateReview failed', e);
+
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { data, error } = await supabase.from('reviews').update(cleanUpdates).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateReview error:', error);
+        throw new Error(error.message || 'Failed to update review in database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
-    const updated = list.map(r => (r.id === id ? { ...r, ...updates } : r));
+    const updated = list.map(r => (String(r.id) === String(id) ? { ...r, ...cleanUpdates, ...(result || {}) } : r));
     setLocal(STORAGE_KEYS.REVIEWS, updated);
-    this.broadcastReviewChange(result || { id, ...updates });
-    return updated.find(r => r.id === id);
+    this.broadcastReviewChange(result || { id, ...cleanUpdates });
+    return result || updated.find(r => String(r.id) === String(id));
   },
 
   async deleteReview(id) {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('reviews').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Supabase deleteReview failed', e);
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { error } = await supabase.from('reviews').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase deleteReview error:', error);
+        throw new Error(error.message || 'Failed to delete review from database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.REVIEWS, DEFAULT_REVIEWS);
-    const filtered = list.filter(r => r.id !== id);
+    const filtered = list.filter(r => String(r.id) !== String(id));
     setLocal(STORAGE_KEYS.REVIEWS, filtered);
     this.broadcastReviewChange({ id, deleted: true });
     return true;
   },
 
-  // ENQUIRIES & REAL-TIME MULTI-DEVICE SYNC
-  subscribeToEnquiries(callback) {
-    const handleLocal = (e) => callback(e.detail || null);
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('max_enquiry_submitted', handleLocal);
-    }
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel('max_enquiries_sync_channel');
-        channel.onmessage = (event) => {
-          if (event.data?.type === 'ENQUIRY_CHANGED') {
-            callback(event.data.detail || null);
-          }
-        };
-      } catch (err) {
-        console.warn('BroadcastChannel subscription failed', err);
-      }
-    }
-
-    let supabaseSub = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        supabaseSub = supabase
-          .channel('public:enquiries:realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'enquiries' },
-            (payload) => {
-              callback(payload.new || payload.old || null);
-            }
-          )
-          .subscribe();
-      } catch (err) {
-        console.warn('Supabase realtime subscription error', err);
-      }
-    }
-
-    // Backup polling every 8 seconds across devices
-    const pollTimer = setInterval(() => {
-      callback(null);
-    }, 8000);
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('max_enquiry_submitted', handleLocal);
-      }
-      if (channel) {
-        try { channel.close(); } catch (e) {}
-      }
-      if (supabaseSub && supabase) {
-        try { supabase.removeChannel(supabaseSub); } catch (e) {}
-      }
-      clearInterval(pollTimer);
-    };
+  // ============================================================================
+  // 7. ENQUIRIES
+  // ============================================================================
+  broadcastEnquiryChange(detail = null) {
+    broadcastTableEvent('max_enquiry_submitted', 'max_enquiries_sync_channel', 'ENQUIRY_CHANGED', detail);
   },
 
-  broadcastEnquiryChange(detail = null) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_enquiry_submitted', { detail }));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_enquiries_sync_channel');
-        bc.postMessage({ type: 'ENQUIRY_CHANGED', detail });
-        bc.close();
-      } catch (e) {}
-    }
+  subscribeToEnquiries(callback) {
+    return subscribeToTableRealtime('enquiries', 'max_enquiry_submitted', 'max_enquiries_sync_channel', callback);
   },
 
   async getEnquiries() {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('enquiries').select('*').order('created_at', { ascending: false });
-        if (!error && data) return data;
+        if (!error && data) {
+          setLocal(STORAGE_KEYS.ENQUIRIES, data);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase enquiries failed', e);
       }
@@ -1396,29 +1251,33 @@ export const dataService = {
   },
 
   async createEnquiry(enquiry) {
-    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `enq-${Date.now()}`;
+    const newId = ensureUUID(enquiry.id);
     const newEnq = {
-      ...enquiry,
-      id: defaultId,
+      id: newId,
+      name: (enquiry.name || '').trim(),
+      phone: (enquiry.phone || '').trim(),
+      email: enquiry.email || null,
+      course_name: enquiry.course_name || null,
+      message: enquiry.message || '',
       status: enquiry.status || 'New',
+      notes: enquiry.notes || null,
       created_at: enquiry.created_at || new Date().toISOString()
     };
+
     let result = newEnq;
+
     if (isSupabaseConfigured && supabase) {
-      try {
-        const insertPayload = { ...newEnq };
-        if (insertPayload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(insertPayload.id)) {
-          delete insertPayload.id;
-        }
-        const { data, error } = await supabase.from('enquiries').insert(insertPayload).select().single();
-        if (!error && data) result = data;
-        else if (error) console.warn('Supabase createEnquiry error:', error);
-      } catch (e) {
-        console.warn('Supabase createEnquiry failed, saving locally', e);
+      const { data, error } = await supabase.from('enquiries').insert(newEnq).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase createEnquiry error:', error);
+        throw new Error(error.message || 'Failed to submit enquiry to database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const updated = [result, ...list.filter(item => item.id !== result.id)];
+    const updated = [result, ...list.filter(item => String(item.id) !== String(result.id))];
     setLocal(STORAGE_KEYS.ENQUIRIES, updated);
     this.broadcastEnquiryChange(result);
     return result;
@@ -1426,130 +1285,83 @@ export const dataService = {
 
   async updateEnquiryStatus(id, status) {
     let result = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('enquiries').update({ status }).eq('id', id).select().single();
-        if (!error && data) {
-          result = data;
-        }
-      } catch (e) {
-        console.warn('Supabase updateEnquiryStatus failed', e);
+
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { data, error } = await supabase.from('enquiries').update({ status }).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateEnquiryStatus error:', error);
+        throw new Error(error.message || 'Failed to update enquiry in database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const updated = list.map(e => (e.id === id ? { ...e, status } : e));
+    const updated = list.map(e => (String(e.id) === String(id) ? { ...e, status } : e));
     setLocal(STORAGE_KEYS.ENQUIRIES, updated);
     this.broadcastEnquiryChange(result || { id, status });
-    return updated.find(e => e.id === id);
+    return result || updated.find(e => String(e.id) === String(id));
   },
 
   async deleteEnquiry(id) {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('enquiries').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Supabase deleteEnquiry failed', e);
+    if (isSupabaseConfigured && supabase && isUUID(id)) {
+      const { error } = await supabase.from('enquiries').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase deleteEnquiry error:', error);
+        throw new Error(error.message || 'Failed to delete enquiry from database');
       }
     }
+
     const list = getLocal(STORAGE_KEYS.ENQUIRIES, DEFAULT_ENQUIRIES);
-    const filtered = list.filter(e => e.id !== id);
+    const filtered = list.filter(e => String(e.id) !== String(id));
     setLocal(STORAGE_KEYS.ENQUIRIES, filtered);
     this.broadcastEnquiryChange({ id, deleted: true });
     return true;
   },
 
-  // FAQ REALTIME & SYNC
+  // ============================================================================
+  // 8. FAQ
+  // ============================================================================
   broadcastFAQChange(detail = null) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_faq_updated', { detail }));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_faq_sync_channel');
-        bc.postMessage({ type: 'FAQ_CHANGED', detail });
-        bc.close();
-      } catch (e) {}
-    }
+    broadcastTableEvent('max_faq_updated', 'max_faq_sync_channel', 'FAQ_CHANGED', detail);
   },
 
   subscribeToFAQ(callback) {
-    const handleLocal = () => callback();
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('max_faq_updated', handleLocal);
-    }
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel('max_faq_sync_channel');
-        channel.onmessage = (event) => {
-          if (event.data?.type === 'FAQ_CHANGED') {
-            callback();
-          }
-        };
-      } catch (e) {}
-    }
-
-    let supabaseChannel = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        supabaseChannel = supabase
-          .channel('public:faq:realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'faq' },
-            () => callback()
-          )
-          .subscribe();
-      } catch (e) {}
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('max_faq_updated', handleLocal);
-      }
-      if (channel) channel.close();
-      if (supabaseChannel && supabase) {
-        supabase.removeChannel(supabaseChannel);
-      }
-    };
+    return subscribeToTableRealtime('faq', 'max_faq_updated', 'max_faq_sync_channel', callback);
   },
 
   async getFAQ() {
-    let supabaseData = null;
+    let items = null;
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').select('*').order('display_order', { ascending: true });
         if (!error && Array.isArray(data)) {
-          supabaseData = data;
+          // Authoritative cloud data
+          items = data;
+          setLocal(STORAGE_KEYS.FAQ, items);
+          idbSet(STORAGE_KEYS.FAQ, items);
+          return items;
         } else if (error) {
-          console.error('Supabase getFAQ error:', error);
+          console.warn('Supabase getFAQ error:', error);
         }
       } catch (e) {
         console.warn('Supabase FAQ failed', e);
       }
     }
 
-    const localData = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-
-    if (supabaseData) {
-      const supabaseIds = new Set(supabaseData.map(item => String(item.id)));
-      const localOnly = localData.filter(item => item && item.id && !supabaseIds.has(String(item.id)));
-      const merged = [...supabaseData, ...localOnly];
-      setLocal(STORAGE_KEYS.FAQ, merged);
-      idbSet(STORAGE_KEYS.FAQ, merged);
-      return merged;
+    if (items === null) {
+      items = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
     }
 
-    return localData;
+    return items;
   },
 
   async addFAQ(faq) {
-    const rawId = faq.id;
-    const isValUUID = isUUID(rawId);
-    
+    const newId = ensureUUID(faq.id);
+
     const insertPayload = {
+      id: newId,
       category: faq.category || 'General',
       question: String(faq.question || '').trim(),
       answer: String(faq.answer || '').trim(),
@@ -1558,68 +1370,56 @@ export const dataService = {
       created_at: new Date().toISOString()
     };
 
-    if (isValUUID) {
-      insertPayload.id = rawId;
-    }
-
-    let savedItem = { id: rawId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `faq-${Date.now()}`), ...insertPayload };
+    let result = insertPayload;
 
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('faq').insert(insertPayload).select().single();
-        if (!error && data) {
-          savedItem = data;
-        } else if (error) {
-          console.error('Supabase addFAQ error:', error);
-        }
-      } catch (e) {
-        console.warn('Supabase addFAQ failed', e);
+      const { data, error } = await supabase.from('faq').insert(insertPayload).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase addFAQ error:', error);
+        throw new Error(error.message || 'Failed to save FAQ to database');
       }
     }
 
     const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const updated = [...current.filter(f => String(f.id) !== String(savedItem.id) && String(f.id) !== String(rawId)), savedItem];
+    const updated = [...current.filter(f => String(f.id) !== String(result.id)), result];
     setLocal(STORAGE_KEYS.FAQ, updated);
     idbSet(STORAGE_KEYS.FAQ, updated);
-    this.broadcastFAQChange(updated);
-    return savedItem;
+    this.broadcastFAQChange(result);
+    return result;
   },
 
   async updateFAQ(id, updates) {
-    const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const target = current.find(f => String(f.id) === String(id)) || {};
-    const merged = { ...target, ...updates, id };
+    const cleanUpdates = { ...updates };
+    delete cleanUpdates.id;
+
+    let result = null;
 
     if (isSupabaseConfigured && supabase && isUUID(id)) {
-      try {
-        const { data, error } = await supabase.from('faq').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          const updated = current.map(f => (String(f.id) === String(id) ? data : f));
-          setLocal(STORAGE_KEYS.FAQ, updated);
-          idbSet(STORAGE_KEYS.FAQ, updated);
-          this.broadcastFAQChange(updated);
-          return data;
-        } else if (error) {
-          console.error('Supabase updateFAQ error:', error);
-        }
-      } catch (e) {
-        console.warn('Supabase updateFAQ failed', e);
+      const { data, error } = await supabase.from('faq').update(cleanUpdates).eq('id', id).select().single();
+      if (!error && data) {
+        result = data;
+      } else if (error) {
+        console.error('Supabase updateFAQ error:', error);
+        throw new Error(error.message || 'Failed to update FAQ in database');
       }
     }
 
-    const updated = current.map(f => (String(f.id) === String(id) ? merged : f));
+    const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+    const updated = current.map(f => (String(f.id) === String(id) ? { ...f, ...cleanUpdates, ...(result || {}) } : f));
     setLocal(STORAGE_KEYS.FAQ, updated);
     idbSet(STORAGE_KEYS.FAQ, updated);
-    this.broadcastFAQChange(updated);
-    return merged;
+    this.broadcastFAQChange(result || { id, ...cleanUpdates });
+    return result || updated.find(f => String(f.id) === String(id));
   },
 
   async deleteFAQ(id) {
     if (isSupabaseConfigured && supabase && isUUID(id)) {
-      try {
-        await supabase.from('faq').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Supabase deleteFAQ failed', e);
+      const { error } = await supabase.from('faq').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase deleteFAQ error:', error);
+        throw new Error(error.message || 'Failed to delete FAQ from database');
       }
     }
 
@@ -1627,23 +1427,81 @@ export const dataService = {
     const filtered = current.filter(f => String(f.id) !== String(id));
     setLocal(STORAGE_KEYS.FAQ, filtered);
     idbSet(STORAGE_KEYS.FAQ, filtered);
-    this.broadcastFAQChange(filtered);
+    this.broadcastFAQChange({ id, deleted: true });
     return true;
   },
 
-  // ANNOUNCEMENTS / POSTS WITH TIME SCHEDULING
-  async getPosts() {
+  // ============================================================================
+  // 9. ANNOUNCEMENTS / POSTS (Dual-mode resilient database sync)
+  // ============================================================================
+  broadcastPostsChange(detail = null) {
+    broadcastTableEvent('max_posts_updated', 'max_posts_sync_channel', 'POSTS_CHANGED', detail);
+  },
+
+  subscribeToPosts(callback) {
+    // Subscribes across posts, admin_activity_log, BroadcastChannel, and window events
+    const unsubPosts = subscribeToTableRealtime('posts', 'max_posts_updated', 'max_posts_sync_channel', callback);
+    let unsubLog = () => {};
     if (isSupabaseConfigured && supabase) {
       try {
+        const logChannel = supabase
+          .channel(`realtime:post_sync:${Date.now()}_${Math.random().toString(36).slice(2, 6)}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'admin_activity_log' },
+            (p) => {
+              if (p.new?.action === 'POST_ANNOUNCEMENT' || p.old?.action === 'POST_ANNOUNCEMENT') {
+                callback(p.new?.new_data || p.old?.new_data || null);
+              }
+            }
+          )
+          .subscribe();
+
+        unsubLog = () => {
+          try { supabase.removeChannel(logChannel); } catch (e) {}
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      unsubPosts();
+      unsubLog();
+    };
+  },
+
+  async getPosts() {
+    if (isSupabaseConfigured && supabase) {
+      // 1. Try native 'posts' table first
+      try {
         const { data, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           setLocal(STORAGE_KEYS.POSTS, data);
           return data;
         }
+      } catch (e) {}
+
+      // 2. Cloud fallback: Read from 'admin_activity_log' where action = 'POST_ANNOUNCEMENT'
+      try {
+        const { data, error } = await supabase
+          .from('admin_activity_log')
+          .select('*')
+          .eq('action', 'POST_ANNOUNCEMENT')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const cloudPosts = data.map(row => ({
+            ...row.new_data,
+            id: row.record_id || row.new_data?.id || row.id,
+            created_at: row.created_at || row.new_data?.created_at
+          }));
+          setLocal(STORAGE_KEYS.POSTS, cloudPosts);
+          return cloudPosts;
+        }
       } catch (e) {
-        console.warn('Supabase getPosts failed, using local fallback', e);
+        console.warn('Supabase getPosts cloud fallback notice:', e);
       }
     }
+
     return getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
   },
 
@@ -1664,86 +1522,111 @@ export const dataService = {
     });
   },
 
-  broadcastPostsChange() {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('max_posts_updated'));
-    }
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel('max_posts_sync_channel');
-        bc.postMessage({ type: 'POSTS_CHANGED' });
-        bc.close();
-      } catch (e) {}
-    }
-  },
-
   async addPost(post) {
-    const defaultId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `post-${Date.now()}`;
+    const newId = ensureUUID(post.id);
     const newPost = {
       ...post,
-      id: defaultId,
-      is_active: post.is_active ?? true,
+      id: newId,
+      is_active: post.is_active !== false,
       start_time: post.start_time || null,
       end_time: post.end_time || null,
       created_at: post.created_at || new Date().toISOString()
     };
-    let result = newPost;
-    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+
+    let saved = false;
 
     if (isSupabaseConfigured && supabase) {
+      // 1. Try native 'posts' table
       try {
-        const insertPayload = { ...newPost };
-        if (insertPayload.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(insertPayload.id)) {
-          delete insertPayload.id;
-        }
-        const { data, error } = await supabase.from('posts').insert(insertPayload).select().single();
+        const { data, error } = await supabase.from('posts').insert(newPost).select().single();
         if (!error && data) {
-          result = data;
-        } else if (error) {
-          console.warn('Supabase addPost error:', error);
+          saved = true;
         }
-      } catch (e) {
-        console.warn('Supabase addPost failed', e);
+      } catch (e) {}
+
+      // 2. Resilient Cloud Database Fallback
+      if (!saved) {
+        try {
+          const { error } = await supabase.from('admin_activity_log').insert({
+            action: 'POST_ANNOUNCEMENT',
+            record_id: newPost.id,
+            new_data: newPost,
+            created_at: newPost.created_at
+          });
+          if (!error) saved = true;
+        } catch (e) {
+          console.warn('Supabase addPost cloud log fallback error:', e);
+        }
       }
     }
-    const updated = [result, ...list.filter(p => String(p.id) !== String(result.id))];
+
+    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+    const updated = [newPost, ...list.filter(p => String(p.id) !== String(newPost.id))];
     setLocal(STORAGE_KEYS.POSTS, updated);
-    this.broadcastPostsChange();
-    return result;
+    this.broadcastPostsChange(newPost);
+    return newPost;
   },
 
   async updatePost(id, updates) {
-    let result = null;
+    const stringId = String(id);
+    const cleanUpdates = { ...updates };
+    delete cleanUpdates.id;
+
     if (isSupabaseConfigured && supabase) {
+      // 1. Try native 'posts'
       try {
-        const { data, error } = await supabase.from('posts').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          result = data;
+        await supabase.from('posts').update(cleanUpdates).eq('id', id);
+      } catch (e) {}
+
+      // 2. Cloud Fallback
+      try {
+        const { data: rows } = await supabase
+          .from('admin_activity_log')
+          .select('*')
+          .eq('action', 'POST_ANNOUNCEMENT')
+          .eq('record_id', stringId);
+
+        if (rows && rows.length > 0) {
+          const existingData = rows[0].new_data || {};
+          const merged = { ...existingData, ...cleanUpdates, id: stringId };
+          await supabase
+            .from('admin_activity_log')
+            .update({ new_data: merged })
+            .eq('id', rows[0].id);
         }
-      } catch (e) {
-        console.warn('Supabase updatePost failed', e);
-      }
+      } catch (e) {}
     }
+
     const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
-    const updated = list.map(p => (String(p.id) === String(id) ? { ...p, ...updates, ...(result || {}) } : p));
+    const updated = list.map(p => (String(p.id) === stringId ? { ...p, ...cleanUpdates } : p));
     setLocal(STORAGE_KEYS.POSTS, updated);
-    this.broadcastPostsChange();
-    return updated.find(p => String(p.id) === String(id));
+    this.broadcastPostsChange({ id: stringId, ...cleanUpdates });
+    return updated.find(p => String(p.id) === stringId);
   },
 
   async deletePost(id) {
-    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
-    const filtered = list.filter(p => String(p.id) !== String(id));
-    setLocal(STORAGE_KEYS.POSTS, filtered);
+    const stringId = String(id);
 
     if (isSupabaseConfigured && supabase) {
+      // 1. Try native 'posts'
       try {
         await supabase.from('posts').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Supabase deletePost failed', e);
-      }
+      } catch (e) {}
+
+      // 2. Cloud Fallback
+      try {
+        await supabase
+          .from('admin_activity_log')
+          .delete()
+          .eq('action', 'POST_ANNOUNCEMENT')
+          .eq('record_id', stringId);
+      } catch (e) {}
     }
-    this.broadcastPostsChange();
+
+    const list = getLocal(STORAGE_KEYS.POSTS, DEFAULT_POSTS);
+    const filtered = list.filter(p => String(p.id) !== stringId);
+    setLocal(STORAGE_KEYS.POSTS, filtered);
+    this.broadcastPostsChange({ id: stringId, deleted: true });
     return true;
   }
 };

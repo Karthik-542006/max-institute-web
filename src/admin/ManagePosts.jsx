@@ -54,9 +54,10 @@ export default function ManagePosts() {
 
   useEffect(() => {
     loadPosts();
-    const handleUpdate = () => loadPosts();
-    window.addEventListener('max_posts_updated', handleUpdate);
-    return () => window.removeEventListener('max_posts_updated', handleUpdate);
+    const unsubscribe = dataService.subscribeToPosts(() => {
+      loadPosts();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadPosts() {

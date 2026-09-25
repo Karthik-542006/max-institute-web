@@ -29,15 +29,21 @@ export default function Contact({ settings }) {
   const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
+    let isMounted = true;
     async function load() {
       const data = await dataService.getCourses();
-      if (Array.isArray(data)) {
-        setCourses(data.filter(c => c && c.is_active));
-      } else {
-        setCourses([]);
+      if (isMounted) {
+        setCourses(Array.isArray(data) ? data.filter(c => c && c.is_active) : []);
       }
     }
     load();
+    const unsubscribe = dataService.subscribeToCourses(() => {
+      load();
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Update selected course if coming from course card

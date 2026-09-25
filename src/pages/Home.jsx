@@ -53,6 +53,7 @@ export default function Home({ settings }) {
   const { toast, showToast, hideToast } = useToast();
 
   useEffect(() => {
+    let isMounted = true;
     async function loadData() {
       const [coursesData, facultyData, reviewsData, galleryData, faqData] = await Promise.all([
         dataService.getCourses(),
@@ -61,21 +62,45 @@ export default function Home({ settings }) {
         dataService.getGallery(),
         dataService.getFAQ()
       ]);
-      setCourses(coursesData.filter(c => c.is_active));
-      setFaculty(facultyData.filter(f => f.is_active));
-      setReviews(reviewsData.filter(r => r.is_featured));
-      const featuredGallery = galleryData.filter(g => g.is_featured);
-      setGallery(featuredGallery.length > 0 ? featuredGallery : galleryData);
-      setFaq(faqData.filter(q => q.is_active));
+      if (isMounted) {
+        setCourses(coursesData.filter(c => c.is_active));
+        setFaculty(facultyData.filter(f => f.is_active));
+        setReviews(reviewsData.filter(r => r.is_featured));
+        const featuredGallery = galleryData.filter(g => g.is_featured);
+        setGallery(featuredGallery.length > 0 ? featuredGallery : galleryData);
+        setFaq(faqData.filter(q => q.is_active));
+      }
     }
     loadData();
 
-    const unsubscribe = dataService.subscribeToReviews(async () => {
-      const reviewsData = await dataService.getReviews();
-      setReviews(reviewsData.filter(r => r.is_featured));
-    });
+    const unsubs = [
+      dataService.subscribeToCourses(async () => {
+        const data = await dataService.getCourses();
+        if (isMounted) setCourses(data.filter(c => c.is_active));
+      }),
+      dataService.subscribeToFaculty(async () => {
+        const data = await dataService.getFaculty();
+        if (isMounted) setFaculty(data.filter(f => f.is_active));
+      }),
+      dataService.subscribeToReviews(async () => {
+        const data = await dataService.getReviews();
+        if (isMounted) setReviews(data.filter(r => r.is_featured));
+      }),
+      dataService.subscribeToGallery(async () => {
+        const data = await dataService.getGallery();
+        const featured = data.filter(g => g.is_featured);
+        if (isMounted) setGallery(featured.length > 0 ? featured : data);
+      }),
+      dataService.subscribeToFAQ(async () => {
+        const data = await dataService.getFAQ();
+        if (isMounted) setFaq(data.filter(q => q.is_active));
+      })
+    ];
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubs.forEach(fn => fn && fn());
+    };
   }, []);
 
   const handleEnquirySubmit = async (e) => {

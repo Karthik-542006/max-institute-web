@@ -48,10 +48,15 @@ export default function AdminDashboard() {
       setLoading(false);
     }
     loadDashboard();
-    const unsubscribe = dataService.subscribeToEnquiries(() => {
-      loadDashboard();
-    });
-    return () => unsubscribe();
+    const unsubs = [
+      dataService.subscribeToEnquiries(() => loadDashboard()),
+      dataService.subscribeToCourses(() => loadDashboard()),
+      dataService.subscribeToFaculty(() => loadDashboard()),
+      dataService.subscribeToGallery(() => loadDashboard())
+    ];
+    return () => {
+      unsubs.forEach(fn => fn && fn());
+    };
   }, []);
 
   const statCards = [

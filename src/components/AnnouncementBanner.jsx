@@ -19,12 +19,13 @@ export default function AnnouncementBanner() {
     // Check periodically every 15 seconds to update scheduled time boundaries automatically
     const timer = setInterval(loadAnnouncements, 15000);
 
-    const handleUpdate = () => loadAnnouncements();
-    window.addEventListener('max_posts_updated', handleUpdate);
+    const unsubscribe = dataService.subscribeToPosts(() => {
+      loadAnnouncements();
+    });
 
     return () => {
       clearInterval(timer);
-      window.removeEventListener('max_posts_updated', handleUpdate);
+      unsubscribe();
     };
   }, []);
 

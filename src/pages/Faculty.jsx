@@ -20,15 +20,21 @@ export default function Faculty() {
   const [selectedFaculty, setSelectedFaculty] = useState(null);
 
   useEffect(() => {
+    let isMounted = true;
     async function load() {
       const data = await dataService.getFaculty();
-      const activeFaculty = data.filter(f => f.is_active);
-      setFaculty(activeFaculty);
+      if (isMounted) {
+        setFaculty(data.filter(f => f.is_active));
+      }
     }
     load();
-    const handleUpdate = () => load();
-    window.addEventListener('max_faculty_updated', handleUpdate);
-    return () => window.removeEventListener('max_faculty_updated', handleUpdate);
+    const unsubscribe = dataService.subscribeToFaculty(() => {
+      load();
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   return (

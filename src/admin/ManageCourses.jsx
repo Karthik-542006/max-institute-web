@@ -53,6 +53,10 @@ export default function ManageCourses() {
 
   useEffect(() => {
     loadCourses();
+    const unsubscribe = dataService.subscribeToCourses(() => {
+      loadCourses();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadCourses() {

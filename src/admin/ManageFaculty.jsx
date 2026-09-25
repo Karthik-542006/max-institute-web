@@ -35,6 +35,10 @@ export default function ManageFaculty() {
 
   useEffect(() => {
     loadFaculty();
+    const unsubscribe = dataService.subscribeToFaculty(() => {
+      loadFaculty();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadFaculty() {

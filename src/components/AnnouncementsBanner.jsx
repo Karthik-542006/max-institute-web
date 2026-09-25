@@ -8,17 +8,22 @@ export default function AnnouncementsBanner() {
   const [closed, setClosed] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    async function loadPosts() {
+      const data = await dataService.getPosts();
+      if (isMounted) {
+        setPosts(data.filter(p => p.is_active));
+      }
+    }
     loadPosts();
-    const handleUpdate = () => loadPosts();
-    window.addEventListener('max_posts_updated', handleUpdate);
-    return () => window.removeEventListener('max_posts_updated', handleUpdate);
+    const unsubscribe = dataService.subscribeToPosts(() => {
+      loadPosts();
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
-
-  async function loadPosts() {
-    const data = await dataService.getPosts();
-    const activePosts = data.filter(p => p.is_active);
-    setPosts(activePosts);
-  }
 
   if (closed || posts.length === 0) return null;
 
