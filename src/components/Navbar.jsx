@@ -12,6 +12,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import Button from './Button';
+import { dataService } from '../lib/dataService';
 
 export default function Navbar({ settings }) {
   const [isOpen, setIsOpen] = useState(false);
