@@ -50,7 +50,10 @@ export default function App() {
 
   useEffect(() => {
     fetchSettings();
-    const unsubscribe = dataService.subscribeToSettings(() => {
+    const unsubscribe = dataService.subscribeToSettings((updated) => {
+      if (updated && typeof updated === 'object' && Object.keys(updated).length > 0) {
+        setSettings((prev) => ({ ...(prev || {}), ...updated }));
+      }
       fetchSettings();
     });
     return () => unsubscribe();
