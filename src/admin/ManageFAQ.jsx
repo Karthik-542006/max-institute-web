@@ -20,6 +20,10 @@ export default function ManageFAQ() {
 
   useEffect(() => {
     loadFaq();
+    const unsubscribe = dataService.subscribeToFAQ(() => {
+      loadFaq();
+    });
+    return () => unsubscribe();
   }, []);
 
   async function loadFaq() {

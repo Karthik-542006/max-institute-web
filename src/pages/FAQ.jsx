@@ -14,9 +14,13 @@ export default function FAQ({ settings }) {
   useEffect(() => {
     async function load() {
       const data = await dataService.getFAQ();
-      setFaqList(data.filter(f => f.is_active));
+      setFaqList(data.filter(f => f.is_active !== false));
     }
     load();
+    const unsubscribe = dataService.subscribeToFAQ(() => {
+      load();
+    });
+    return () => unsubscribe();
   }, []);
 
   const categories = ['All', 'Courses', 'Admissions', 'General'];

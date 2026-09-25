@@ -67,8 +67,7 @@ export default function Settings() {
               </label>
               <input
                 type="text"
-                required
-                value={form.phone}
+                value={form.phone || ''}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
               />
@@ -94,8 +93,7 @@ export default function Settings() {
               </label>
               <input
                 type="email"
-                required
-                value={form.email}
+                value={form.email || ''}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
               />
@@ -108,8 +106,7 @@ export default function Settings() {
             </label>
             <textarea
               rows={3}
-              required
-              value={form.address}
+              value={form.address || ''}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               className="w-full px-4 py-2.5 rounded-xl border border-brand-border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none"
             />

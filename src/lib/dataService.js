@@ -569,15 +569,23 @@ export const dataService = {
   },
 
   async updateSettings(updates) {
-    let result = null;
+    const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    const merged = { ...DEFAULT_SETTINGS, ...current, ...updates, updated_at: new Date().toISOString() };
+    
+    // Auto-sanitization fallback checks
+    if (!merged.phone) merged.phone = '+91 99654 68185';
+    if (!merged.phone2) merged.phone2 = '+91 63809 27568';
+    if (!merged.email) merged.email = 'contact@maxinstitute.edu.in';
+    if (!merged.address) merged.address = '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167';
+
+    let result = merged;
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: existing } = await supabase.from('site_settings').select('id').limit(1).maybeSingle();
-        const payload = existing?.id ? { id: existing.id, ...updates } : { ...updates };
+        const { data: existing } = await supabase.from('site_settings').select('*').limit(1).maybeSingle();
+        const payload = existing?.id ? { ...existing, ...merged, id: existing.id } : { ...merged };
         const { data, error } = await supabase.from('site_settings').upsert(payload).select().single();
         if (!error && data) {
           result = data;
-          setLocal(STORAGE_KEYS.SETTINGS, data);
         } else if (error) {
           console.error('Supabase updateSettings error:', error);
         }
@@ -585,11 +593,8 @@ export const dataService = {
         console.warn('Supabase updateSettings failed, saving locally', e);
       }
     }
-    if (!result) {
-      const current = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
-      result = { ...current, ...updates, updated_at: new Date().toISOString() };
-      setLocal(STORAGE_KEYS.SETTINGS, result);
-    }
+    
+    setLocal(STORAGE_KEYS.SETTINGS, result);
     idbSet(STORAGE_KEYS.SETTINGS, result);
     this.broadcastSettingsChange(result);
     return result;
@@ -1311,13 +1316,71 @@ export const dataService = {
     return true;
   },
 
-  // FAQ
+  // FAQ REALTIME & SYNC
+  broadcastFAQChange(detail = null) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('max_faq_updated', { detail }));
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('max_faq_sync_channel');
+        bc.postMessage({ type: 'FAQ_CHANGED', detail });
+        bc.close();
+      } catch (e) {}
+    }
+  },
+
+  subscribeToFAQ(callback) {
+    const handleLocal = () => callback();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('max_faq_updated', handleLocal);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('max_faq_sync_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'FAQ_CHANGED') {
+            callback();
+          }
+        };
+      } catch (e) {}
+    }
+
+    let supabaseChannel = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        supabaseChannel = supabase
+          .channel('public:faq:realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'faq' },
+            () => callback()
+          )
+          .subscribe();
+      } catch (e) {}
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('max_faq_updated', handleLocal);
+      }
+      if (channel) channel.close();
+      if (supabaseChannel && supabase) {
+        supabase.removeChannel(supabaseChannel);
+      }
+    };
+  },
+
   async getFAQ() {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').select('*').order('display_order', { ascending: true });
-        if (!error && data) {
-          if (data.length > 0) setLocal(STORAGE_KEYS.FAQ, data);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          setLocal(STORAGE_KEYS.FAQ, data);
+          idbSet(STORAGE_KEYS.FAQ, data);
           return data;
         }
       } catch (e) {
@@ -1329,37 +1392,64 @@ export const dataService = {
 
   async addFAQ(faq) {
     const newFaq = {
-      ...faq,
       id: faq.id || `faq-${Date.now()}`,
+      category: faq.category || 'General',
+      question: String(faq.question || '').trim(),
+      answer: String(faq.answer || '').trim(),
+      display_order: parseInt(faq.display_order) || 1,
+      is_active: faq.is_active !== false,
       created_at: new Date().toISOString()
     };
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').insert(newFaq).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+          const updated = [...current.filter(f => f.id !== data.id), data];
+          setLocal(STORAGE_KEYS.FAQ, updated);
+          idbSet(STORAGE_KEYS.FAQ, updated);
+          this.broadcastFAQChange(updated);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase addFAQ failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const updated = [...list, newFaq];
+
+    const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+    const updated = [...current.filter(f => f.id !== newFaq.id), newFaq];
     setLocal(STORAGE_KEYS.FAQ, updated);
+    idbSet(STORAGE_KEYS.FAQ, updated);
+    this.broadcastFAQChange(updated);
     return newFaq;
   },
 
   async updateFAQ(id, updates) {
+    const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+    const target = current.find(f => f.id === id) || {};
+    const merged = { ...target, ...updates, id };
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.from('faq').update(updates).eq('id', id).select().single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const updated = current.map(f => (f.id === id ? data : f));
+          setLocal(STORAGE_KEYS.FAQ, updated);
+          idbSet(STORAGE_KEYS.FAQ, updated);
+          this.broadcastFAQChange(updated);
+          return data;
+        }
       } catch (e) {
         console.warn('Supabase updateFAQ failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const updated = list.map(f => (f.id === id ? { ...f, ...updates } : f));
+
+    const updated = current.map(f => (f.id === id ? merged : f));
     setLocal(STORAGE_KEYS.FAQ, updated);
-    return updated.find(f => f.id === id);
+    idbSet(STORAGE_KEYS.FAQ, updated);
+    this.broadcastFAQChange(updated);
+    return merged;
   },
 
   async deleteFAQ(id) {
@@ -1370,9 +1460,12 @@ export const dataService = {
         console.warn('Supabase deleteFAQ failed', e);
       }
     }
-    const list = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
-    const filtered = list.filter(f => f.id !== id);
+
+    const current = getLocal(STORAGE_KEYS.FAQ, DEFAULT_FAQ);
+    const filtered = current.filter(f => f.id !== id);
     setLocal(STORAGE_KEYS.FAQ, filtered);
+    idbSet(STORAGE_KEYS.FAQ, filtered);
+    this.broadcastFAQChange(filtered);
     return true;
   },
 
