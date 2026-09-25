@@ -158,10 +158,16 @@ export default function Footer({ settings }) {
               Contact Institution
             </h4>
             <div className="space-y-3.5 text-xs text-slate-300">
-              <div className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
+              <a 
+                href={activeSettings?.google_maps_url || 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2.5 hover:text-white transition-colors group"
+                title="Open MAX Educational Institution in Google Maps"
+              >
+                <MapPin className="w-4 h-4 text-brand-accent shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
                 <span className="leading-relaxed">{address}</span>
-              </div>
+              </a>
               <div className="flex items-start gap-2.5">
                 <Phone className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
                 <div className="flex flex-col gap-0.5">

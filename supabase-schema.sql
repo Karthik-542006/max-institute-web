@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   closing_time TEXT NOT NULL DEFAULT '06:00 PM',
   google_rating NUMERIC(2,1) DEFAULT 4.9,
   total_google_reviews INTEGER DEFAULT 110,
-  google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+  google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6',
   google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin',
   logo_url TEXT,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL

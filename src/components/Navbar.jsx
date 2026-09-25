@@ -73,10 +73,16 @@ export default function Navbar({ settings }) {
       <div className="bg-brand-primary text-slate-200 text-xs py-2 px-4 border-b border-brand-primary/20 hidden md:block">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <MapPin className="w-3.5 h-3.5 text-brand-accent shrink-0" />
+            <a
+              href={activeSettings?.google_maps_url || 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors group"
+              title="Open MAX Educational Institution in Google Maps"
+            >
+              <MapPin className="w-3.5 h-3.5 text-brand-accent shrink-0 group-hover:scale-110 transition-transform" />
               <span>Azhagiyamandapam, Mulagamooddu, Tamil Nadu</span>
-            </div>
+            </a>
             <div className="flex items-center gap-1.5 text-slate-300">
               <Clock className="w-3.5 h-3.5 text-brand-accent shrink-0" />
               <span>{hours}</span>

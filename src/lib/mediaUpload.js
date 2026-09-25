@@ -98,70 +98,45 @@ export async function uploadMedia(file, bucket = 'gallery') {
   const storagePath = `${folder}/${uniqueId}-${cleanName}`;
 
   if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(storagePath, file, {
-          contentType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
-          cacheControl: '3600',
-          upsert: false
-        });
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(storagePath, file, {
+        contentType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
+        cacheControl: '3600',
+        upsert: false
+      });
 
-      if (error) {
-        console.warn(`Supabase Storage upload warning (${bucket}/${storagePath}):`, error.message || error);
-        return {
-          url: preview,
-          fileUrl: preview,
-          storagePath: null,
-          mediaType,
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
-          preview
-        };
-      }
-
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(data.path);
-
-      const publicUrl = urlData?.publicUrl || preview;
-
-      return {
-        url: publicUrl,
-        fileUrl: publicUrl,
-        storagePath: data.path,
-        mediaType,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
-        preview
-      };
-    } catch (e) {
-      console.warn('Supabase media upload error, using local preview fallback:', e);
-      return {
-        url: preview,
-        fileUrl: preview,
-        storagePath: null,
-        mediaType,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
-        preview
-      };
+    if (error) {
+      console.error(`Supabase Storage upload error (${bucket}/${storagePath}):`, error);
+      throw new Error(`Upload to storage failed: ${error.message || 'Storage error'}`);
     }
+
+    if (!data || !data.path) {
+      throw new Error('Storage service did not return an upload path.');
+    }
+
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(data.path);
+
+    const publicUrl = urlData?.publicUrl;
+    if (!publicUrl) {
+      throw new Error('Unable to generate public URL for uploaded media.');
+    }
+
+    return {
+      url: publicUrl,
+      fileUrl: publicUrl,
+      storagePath: data.path,
+      mediaType,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
+      preview
+    };
   }
 
-  return {
-    url: preview,
-    fileUrl: preview,
-    storagePath: null,
-    mediaType,
-    fileName: file.name,
-    fileSize: file.size,
-    mimeType: file.type || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4'),
-    preview
-  };
+  throw new Error('Database/Storage is not configured. Please check connection.');
 }
 
 /**

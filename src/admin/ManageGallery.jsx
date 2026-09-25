@@ -17,12 +17,14 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  Play
+  Play,
+  Camera
 } from 'lucide-react';
 import { dataService } from '../lib/dataService';
 import { validateMediaFile, uploadMedia, getMediaPreview } from '../lib/mediaUpload';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import CameraCaptureModal from '../components/CameraCaptureModal';
 import Toast, { useToast } from '../components/Toast';
 
 const CATEGORIES = ['Institute', 'Classroom', 'Students', 'Activities', 'Events'];
@@ -59,12 +61,32 @@ export default function ManageGallery() {
   // Upload Progress & Batch Files
   const [uploadProgress, setUploadProgress] = useState(null); // { current: 0, total: 0 }
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
   // File Inputs
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
 
   const { toast, showToast, hideToast } = useToast();
+
+  const handleCameraCapture = async (file) => {
+    try {
+      const isVid = file.type.startsWith('video');
+      setPendingFiles([file]);
+      setMediaType(isVid ? 'video' : 'image');
+      setMediaSource('upload');
+      const preview = URL.createObjectURL(file);
+      setMediaPreview(preview);
+      setForm(prev => ({
+        ...prev,
+        file_url: '__pending_upload__',
+        title: prev.title || `Campus ${isVid ? 'Video' : 'Photo'} ${new Date().toLocaleDateString('en-GB')}`
+      }));
+      showToast(`${isVid ? 'Video' : 'Photo'} captured successfully! Ready for upload.`, 'success');
+    } catch (err) {
+      showToast('Error processing captured camera file', 'error');
+    }
+  };
 
   useEffect(() => {
     loadGallery();
@@ -606,30 +628,40 @@ export default function ManageGallery() {
             <label className="block text-xs font-bold text-brand-text mb-2 uppercase tracking-wide">
               Select Media Source <span className="text-red-500">*</span>
             </label>
-            <div className="flex gap-2 mb-3">
+            <div className="flex flex-wrap gap-2 mb-3">
               <button
                 type="button"
                 onClick={() => setMediaSource('upload')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`flex-1 min-w-[110px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
                   mediaSource === 'upload'
                     ? 'bg-brand-primary text-white border-brand-primary shadow-md'
                     : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
-                File Picker / Drag & Drop
+                <span>File Picker</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCameraModalOpen(true)}
+                className="flex-1 min-w-[110px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Use Camera</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setMediaSource('url')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`flex-1 min-w-[110px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
                   mediaSource === 'url'
                     ? 'bg-brand-primary text-white border-brand-primary shadow-md'
                     : 'bg-white text-brand-muted border-brand-border hover:border-brand-primary hover:text-brand-primary'
                 }`}
               >
                 <Link className="w-3.5 h-3.5" />
-                Media URL
+                <span>Media URL</span>
               </button>
             </div>
 
@@ -805,6 +837,13 @@ export default function ManageGallery() {
           </div>
         </form>
       </Modal>
+
+      {/* Live Camera Viewfinder & Recording Modal (Requirements 10 & 13) */}
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={handleCameraCapture}
+      />
 
       <Toast toast={toast} onClose={hideToast} />
     </div>

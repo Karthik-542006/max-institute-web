@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   youtube_url TEXT DEFAULT 'https://youtube.com',
   google_rating NUMERIC(2,1) DEFAULT 4.9,
   total_google_reviews INTEGER DEFAULT 110,
-  google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+  google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6',
   google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin',
   updated_by TEXT DEFAULT 'admin',
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -109,8 +109,20 @@ BEGIN
     ALTER TABLE public.site_settings ADD COLUMN institution_name TEXT DEFAULT 'MAX Educational Institution';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='site_settings' AND column_name='phone2') THEN
+    ALTER TABLE public.site_settings ADD COLUMN phone2 TEXT DEFAULT '+91 63809 27568';
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='site_settings' AND column_name='whatsapp') THEN
     ALTER TABLE public.site_settings ADD COLUMN whatsapp TEXT DEFAULT '+91 99654 68185';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='site_settings' AND column_name='google_maps_url') THEN
+    ALTER TABLE public.site_settings ADD COLUMN google_maps_url TEXT DEFAULT 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='site_settings' AND column_name='google_maps_embed') THEN
+    ALTER TABLE public.site_settings ADD COLUMN google_maps_embed TEXT DEFAULT 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='site_settings' AND column_name='website_title') THEN
@@ -181,9 +193,25 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT UNIQUE NOT NULL,
   role TEXT NOT NULL DEFAULT 'system_admin', -- 'system_admin', 'admin', 'user'
   full_name TEXT,
+  is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='full_name') THEN
+    ALTER TABLE public.profiles ADD COLUMN full_name TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='is_active') THEN
+    ALTER TABLE public.profiles ADD COLUMN is_active BOOLEAN DEFAULT true;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='updated_at') THEN
+    ALTER TABLE public.profiles ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL;
+  END IF;
+END $$;
 
 -- 5. AUDIT LOG TABLE FOR SYSTEM ADMINS
 CREATE TABLE IF NOT EXISTS public.admin_activity_log (

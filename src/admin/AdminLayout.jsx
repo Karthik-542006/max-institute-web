@@ -19,9 +19,12 @@ import {
   Megaphone
 } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
+import { useRealtimeStatus, useAdminPresence } from '../hooks/useRealtimeStatus';
 
 export default function AdminLayout() {
   const { user, loading, signOut } = useAuth();
+  const { isConnected, isReconnecting } = useRealtimeStatus();
+  const { adminCount } = useAdminPresence(user);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -167,13 +170,41 @@ export default function AdminLayout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Realtime Live Sync Status Badge (Requirement 5) */}
+            <div className="flex items-center">
+              {isConnected ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="hidden sm:inline">Live Sync Connected</span>
+                  <span className="sm:hidden">Live</span>
+                </div>
+              ) : isReconnecting ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  <span>Reconnecting...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span>Offline</span>
+                </div>
+              )}
+            </div>
+
+            {/* Online Admin Presence Badge (Requirement 34) */}
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>{adminCount} Admin{adminCount > 1 ? 's' : ''} Online</span>
+            </div>
+
+            {/* Admin Profile Info */}
             <div className="text-right hidden sm:block">
               <p className="text-xs font-bold text-brand-primary leading-tight">
                 {user.email}
               </p>
               <p className="text-[10px] text-brand-muted uppercase font-semibold">
-                Administrator
+                {user.role === 'system_admin' ? 'System Administrator' : 'Administrator'}
               </p>
             </div>
             <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold text-xs border border-brand-primary/20">

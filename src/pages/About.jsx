@@ -208,7 +208,7 @@ export default function About({ settings }) {
             Visit Our Center in Azhagiyamandapam
           </h3>
           <p className="text-sm text-brand-muted mb-8 leading-relaxed max-w-xl mx-auto">
-            Conveniently located on the 1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam. Open until 6:00 PM.
+            Conveniently located at {settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam'}. Open until {settings?.closing_time || '06:00 PM'}.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/contact">
@@ -216,6 +216,15 @@ export default function About({ settings }) {
                 Plan a Visit or Send Enquiry
               </Button>
             </Link>
+            <a 
+              href={settings?.google_maps_url || 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6'}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline" size="md" icon={MapPin}>
+                View on Google Maps
+              </Button>
+            </a>
             <a href={`tel:${(settings?.phone || '+91 99654 68185').replace(/\s+/g, '')}`}>
               <Button variant="outline" size="md">
                 Call {settings?.phone || '+91 99654 68185'}

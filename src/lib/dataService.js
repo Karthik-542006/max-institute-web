@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { idbGet, idbSet, idbDel } from './idb.js';
 import { deleteStorageFile } from './mediaUpload.js';
+import { realtimeManager } from '../services/realtime/realtimeManager.js';
 
 const STORAGE_KEYS = {
   SETTINGS: 'max_site_settings',
@@ -27,42 +28,22 @@ const DEFAULT_POSTS = [
   }
 ];
 
-// Immediate Auto-Sanitization Script for local storage phone number persistence
-try {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const raw = localStorage.getItem('max_site_settings');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      let needsSave = false;
-      if (!parsed.phone || parsed.phone === '063809 27568' || parsed.phone.includes('063809')) {
-        parsed.phone = '+91 99654 68185';
-        needsSave = true;
-      }
-      if (!parsed.phone2 || parsed.phone2 === '063809 27568' || parsed.phone2 === '63809 27568') {
-        parsed.phone2 = '+91 63809 27568';
-        needsSave = true;
-      }
-      if (needsSave) {
-        localStorage.setItem('max_site_settings', JSON.stringify(parsed));
-      }
-    }
-  }
-} catch (e) {}
-
-// Initial Seed Data
+// Initial Seed Data - Single Source of Truth defaults with exact MAX Educational Institution location
 const DEFAULT_SETTINGS = {
   id: 'default-settings',
   institute_name: 'MAX Educational Institution',
+  institution_name: 'MAX Educational Institution',
   tagline: 'Empowering Students With Skills for Tomorrow',
   phone: '+91 99654 68185',
   phone2: '+91 63809 27568',
+  whatsapp: '+91 63809 27568',
   email: 'contact@maxinstitute.edu.in',
   address: '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167',
   opening_time: '09:00 AM',
   closing_time: '06:00 PM',
   google_rating: 4.9,
   total_google_reviews: 110,
-  google_maps_url: 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+  google_maps_url: 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6',
   google_maps_embed: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1974.1999671895421!2d77.29470315707398!3d8.262930013284187!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3b04f9bc8580f251%3A0xc1e69931d91db4ac!2sMAX%20Educational%20Institution!5e0!3m2!1sen!2sin!4v1790232706966!5m2!1sen!2sin'
 };
 
@@ -475,96 +456,19 @@ function ensureUUID(id) {
 
 /**
  * Universal Multi-System Real-Time Table Synchronizer
- * Subscribes across:
+ * Delegated to centralized RealtimeManager:
  * 1. Supabase Postgres Realtime (World-wide real-time WebSocket)
  * 2. Cross-tab BroadcastChannel (Instant multi-tab sync on same machine)
  * 3. Local CustomEvent (In-window sync)
- * 4. Tab Visibility & Focus heartbeat (Refetches when waking up or switching tabs)
+ * 4. Automatic reconnection & cache refresh
  */
 function subscribeToTableRealtime(tableName, customEventName, channelName, callback) {
-  const handleLocal = (e) => callback(e?.detail || null);
-
-  // 1. Same-window local event listener
-  if (typeof window !== 'undefined') {
-    window.addEventListener(customEventName, handleLocal);
-  }
-
-  // 2. Cross-tab BroadcastChannel
-  let bc = null;
-  if (typeof BroadcastChannel !== 'undefined') {
-    try {
-      bc = new BroadcastChannel(channelName);
-      bc.onmessage = (event) => {
-        callback(event.data?.detail || null);
-      };
-    } catch (e) {
-      console.warn(`BroadcastChannel not supported for ${channelName}`, e);
-    }
-  }
-
-  // 3. Supabase Realtime WebSocket (across other systems & devices)
-  let supabaseChannel = null;
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const channelId = `realtime:${tableName}:${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      supabaseChannel = supabase
-        .channel(channelId)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: tableName },
-          (payload) => {
-            callback(payload.new || payload.old || payload);
-          }
-        )
-        .subscribe((status, err) => {
-          if (err) {
-            console.warn(`Supabase Realtime (${tableName}) warning:`, err.message || err);
-          }
-        });
-    } catch (e) {
-      console.warn(`Supabase Realtime subscription error (${tableName}):`, e);
-    }
-  }
-
-  // 4. Tab Focus & Visibility Refetch (ensures device is 100% current on wake/focus)
-  const handleFocus = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      callback({ type: 'VISIBILITY_SYNC' });
-    }
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
-  }
-
-  // 5. Cleanup
-  return () => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener(customEventName, handleLocal);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
-    }
-    if (bc) {
-      try { bc.close(); } catch (e) {}
-    }
-    if (supabaseChannel && supabase) {
-      try { supabase.removeChannel(supabaseChannel); } catch (e) {}
-    }
-  };
+  return realtimeManager.subscribeToTable(tableName, callback);
 }
 
 function broadcastTableEvent(customEventName, channelName, actionType, detail = null) {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(customEventName, { detail }));
-  }
-  if (typeof BroadcastChannel !== 'undefined') {
-    try {
-      const bc = new BroadcastChannel(channelName);
-      bc.postMessage({ type: actionType, detail });
-      bc.close();
-    } catch (e) {}
-  }
+  const tableName = customEventName.replace(/^max_/, '').replace(/_(updated|changed|submitted)$/, '');
+  realtimeManager.broadcastEvent(tableName, actionType, { detail });
 }
 
 // Unified Data Service API
@@ -597,42 +501,54 @@ export const dataService = {
       settings = getLocal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
     }
 
-    // Auto-sanitization
-    if (!settings.phone || settings.phone === '063809 27568' || settings.phone.includes('063809')) {
+    // Single source defaults: Ensure exact MAX Educational Institution Google Maps URL is always enforced
+    if (!settings.google_maps_url || settings.google_maps_url.includes('Py3cme7zBE4aBK777') || settings.google_maps_url.includes('maps.google.com/?q=')) {
+      settings.google_maps_url = 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6';
+    }
+    if (!settings.phone) {
       settings.phone = '+91 99654 68185';
+    }
+    if (!settings.whatsapp) {
+      settings.whatsapp = settings.phone2 || '+91 63809 27568';
     }
     if (!settings.phone2) {
       settings.phone2 = settings.whatsapp || '+91 63809 27568';
-    }
-    if (!settings.whatsapp) {
-      settings.whatsapp = '+91 63809 27568';
     }
 
     return settings;
   },
 
   broadcastSettingsChange(detail = null) {
-    broadcastTableEvent('max_settings_updated', 'max_settings_sync_channel', 'SETTINGS_CHANGED', detail);
+    realtimeManager.broadcastEvent('site_settings', 'SETTINGS_CHANGED', { detail });
   },
 
   subscribeToSettings(callback) {
-    return subscribeToTableRealtime('site_settings', 'max_settings_updated', 'max_settings_sync_channel', callback);
+    return realtimeManager.subscribeToTable('site_settings', callback);
   },
 
-  async updateSettings(updates) {
+  async updateSettings(updates, expectedUpdatedAt = null) {
     const current = await this.getSettings();
     const merged = { ...DEFAULT_SETTINGS, ...current, ...updates, updated_at: new Date().toISOString() };
 
     let result = merged;
     if (isSupabaseConfigured && supabase) {
       try {
-        // Fetch existing canonical row
+        // Fetch existing canonical row for conflict detection and target ID resolution
         const { data: existing } = await supabase
           .from('site_settings')
           .select('*')
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+
+        // Safe Concurrency Conflict Handling (Requirement 18)
+        if (expectedUpdatedAt && existing?.updated_at) {
+          const serverTime = new Date(existing.updated_at).getTime();
+          const clientExpectedTime = new Date(expectedUpdatedAt).getTime();
+          if (serverTime - clientExpectedTime > 1500) {
+            throw new Error('This item was updated by another administrator. Please review the latest version before saving.');
+          }
+        }
 
         const targetId = existing?.id || 'fbfe01cc-bd44-4777-8dcb-8be83d226934';
 
@@ -650,7 +566,7 @@ export const dataService = {
           closing_time: merged.closing_time || '06:00 PM',
           google_rating: Number(merged.google_rating || 4.9),
           total_google_reviews: parseInt(merged.total_google_reviews) || 110,
-          google_maps_url: merged.google_maps_url || 'https://maps.app.goo.gl/Py3cme7zBE4aBK777',
+          google_maps_url: merged.google_maps_url || 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6',
           logo_url: merged.logo_url || null,
           favicon_url: merged.favicon_url || null,
           website_title: merged.website_title || 'MAX Educational Institution | Azhagiyamandapam',
@@ -665,6 +581,7 @@ export const dataService = {
         const { data, error } = await supabase.from('site_settings').upsert(cleanPayload).select().single();
         if (!error && data) {
           result = { ...merged, ...data, phone2: data.whatsapp || merged.phone2 };
+          await this.logAdminActivity('UPDATE_SITE_SETTINGS', 'site_settings', targetId, existing, cleanPayload);
         } else if (error) {
           console.error('Supabase updateSettings database error:', error);
           throw new Error(error.message || 'Database rejected settings update');
@@ -1040,10 +957,21 @@ export const dataService = {
         const { data, error } = await supabase.from('gallery').insert(formattedItems).select();
         if (error) {
           console.error('Supabase addGalleryItems error:', error);
+          // Rollback newly uploaded storage files on DB insertion error
+          for (const item of formattedItems) {
+            if (item.storage_path) {
+              await deleteStorageFile('gallery', item.storage_path).catch(() => {});
+            }
+          }
           throw new Error(error.message || 'Failed to save gallery items to database');
         }
       } catch (e) {
         console.warn('Supabase addGalleryItems batch notice:', e);
+        for (const item of formattedItems) {
+          if (item.storage_path) {
+            await deleteStorageFile('gallery', item.storage_path).catch(() => {});
+          }
+        }
         throw e;
       }
     }
@@ -1052,7 +980,7 @@ export const dataService = {
     const updatedList = [...formattedItems, ...currentLocal.filter(g => !formattedItems.some(f => String(f.id) === String(g.id)))];
     await setStored(STORAGE_KEYS.GALLERY, updatedList);
 
-    this.logAdminActivity('UPLOADED_GALLERY_MEDIA', 'gallery', formattedItems.map(i => i.id).join(','), null, formattedItems);
+    await this.logAdminActivity('UPLOAD_GALLERY', 'gallery', formattedItems.map(i => i.id).join(','), null, formattedItems);
     this.broadcastGalleryChange(formattedItems);
     return formattedItems;
   },
@@ -1068,6 +996,10 @@ export const dataService = {
       const { data, error } = await supabase.from('gallery').update(cleanUpdates).eq('id', id).select().single();
       if (!error && data) {
         result = data;
+        let action = 'UPDATE_GALLERY';
+        if (cleanUpdates.is_published === true) action = 'PUBLISH_GALLERY';
+        else if (cleanUpdates.is_published === false) action = 'UNPUBLISH_GALLERY';
+        await this.logAdminActivity(action, 'gallery', id, null, cleanUpdates);
       } else if (error) {
         console.error('Supabase updateGalleryItem error:', error);
         throw new Error(error.message || 'Failed to update gallery item in database');
@@ -1093,11 +1025,22 @@ export const dataService = {
     if (isSupabaseConfigured && supabase) {
       const validUUIDs = idsArray.filter(isUUID);
       if (validUUIDs.length > 0) {
+        // Retrieve storage paths before database deletion
+        const { data: records } = await supabase.from('gallery').select('id, storage_path').in('id', validUUIDs);
+        const storagePaths = records ? records.map(r => r.storage_path).filter(Boolean) : [];
+
         const { error } = await supabase.from('gallery').delete().in('id', validUUIDs);
         if (error) {
           console.error('Supabase deleteGalleryItems error:', error);
           throw new Error(error.message || 'Failed to delete gallery items from database');
         }
+
+        // Clean up corresponding storage files
+        for (const path of storagePaths) {
+          await deleteStorageFile('gallery', path).catch(() => {});
+        }
+
+        await this.logAdminActivity('DELETE_GALLERY', 'gallery', validUUIDs.join(','), null, { deleted_count: validUUIDs.length });
       }
     }
 
@@ -1107,6 +1050,31 @@ export const dataService = {
 
     this.broadcastGalleryChange(idsArray);
     return true;
+  },
+
+  // ============================================================================
+  // ADMIN ACTIVITY AUDIT LOG
+  // ============================================================================
+  async getActivityLog(limit = 25) {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('admin_activity_log')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (!error && Array.isArray(data)) {
+          return data;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch activity log:', e);
+      }
+    }
+    return [];
+  },
+
+  subscribeToActivityLog(callback) {
+    return realtimeManager.subscribeToTable('admin_activity_log', callback);
   },
 
   // ============================================================================

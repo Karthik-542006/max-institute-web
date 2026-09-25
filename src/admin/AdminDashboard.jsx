@@ -4,6 +4,7 @@ import {
   BookOpen, 
   Users, 
   Image as ImageIcon, 
+  Video as VideoIcon,
   Inbox, 
   ArrowRight, 
   Clock, 
@@ -11,49 +12,134 @@ import {
   AlertCircle,
   PlusCircle,
   Settings as SettingsIcon,
-  ShieldCheck
+  ShieldCheck,
+  Activity,
+  Radio,
+  Eye,
+  EyeOff,
+  Flame
 } from 'lucide-react';
 import { dataService } from '../lib/dataService';
+import { useAuth } from '../lib/authContext';
+import { useRealtimeStatus, useAdminPresence } from '../hooks/useRealtimeStatus';
 import Button from '../components/Button';
 
+function timeAgo(dateString) {
+  if (!dateString) return 'Just now';
+  const now = new Date();
+  const past = new Date(dateString);
+  const diffSec = Math.floor((now - past) / 1000);
+
+  if (diffSec < 15) return 'Just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDays = Math.floor(diffHour / 24);
+  return `${diffDays}d ago`;
+}
+
+function formatActivityMessage(activity) {
+  const admin = activity.admin_email ? activity.admin_email.split('@')[0] : 'Admin';
+  switch (activity.action) {
+    case 'UPDATE_SITE_SETTINGS':
+      return `${admin} updated institution settings and contact details.`;
+    case 'UPLOAD_GALLERY':
+      return `${admin} uploaded new media to campus gallery.`;
+    case 'UPDATE_GALLERY':
+      return `${admin} updated gallery media metadata.`;
+    case 'PUBLISH_GALLERY':
+      return `${admin} published a gallery item to the public website.`;
+    case 'UNPUBLISH_GALLERY':
+      return `${admin} unpublished a gallery item.`;
+    case 'DELETE_GALLERY':
+      return `${admin} deleted media from the gallery.`;
+    case 'LOGIN':
+      return `${admin} signed in to administrative panel.`;
+    case 'LOGOUT':
+      return `${admin} signed out.`;
+    default:
+      return `${admin} performed administrative action: ${activity.action}`;
+  }
+}
+
 export default function AdminDashboard() {
+  const { user } = useAuth();
+  const { isConnected, isReconnecting, status } = useRealtimeStatus();
+  const { adminCount } = useAdminPresence(user);
+
   const [stats, setStats] = useState({
     courses: 0,
     faculty: 0,
-    gallery: 0,
+    galleryTotal: 0,
+    galleryPublished: 0,
+    galleryUnpublished: 0,
+    galleryImages: 0,
+    galleryVideos: 0,
     newEnquiries: 0
   });
+
   const [recentEnquiries, setRecentEnquiries] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadDashboard() {
-      const [courses, faculty, gallery, enquiries] = await Promise.all([
+  const loadDashboard = async () => {
+    try {
+      const [courses, faculty, gallery, enquiries, activityLogs] = await Promise.all([
         dataService.getCourses(),
         dataService.getFaculty(),
-        dataService.getGallery(),
-        dataService.getEnquiries()
+        dataService.getGallery('All'),
+        dataService.getEnquiries(),
+        dataService.getActivityLog(15)
       ]);
 
-      const newEnqs = enquiries.filter(e => e.status === 'New');
+      const newEnqs = Array.isArray(enquiries) ? enquiries.filter(e => e.status === 'New') : [];
+      const galleryList = Array.isArray(gallery) ? gallery : [];
+
+      const published = galleryList.filter(g => g.is_published !== false);
+      const unpublished = galleryList.filter(g => g.is_published === false);
+      const images = galleryList.filter(g => g.media_type === 'image' || (!g.media_type && !g.file_url?.match(/\.(mp4|webm|mov)(\?|$)/i)));
+      const videos = galleryList.filter(g => g.media_type === 'video' || (g.file_url && g.file_url.match(/\.(mp4|webm|mov)(\?|$)/i)));
 
       setStats({
         courses: courses.length,
         faculty: faculty.length,
-        gallery: gallery.length,
+        galleryTotal: galleryList.length,
+        galleryPublished: published.length,
+        galleryUnpublished: unpublished.length,
+        galleryImages: images.length,
+        galleryVideos: videos.length,
         newEnquiries: newEnqs.length
       });
 
-      setRecentEnquiries(enquiries.slice(0, 5));
+      setRecentEnquiries(Array.isArray(enquiries) ? enquiries.slice(0, 5) : []);
+      setActivities(Array.isArray(activityLogs) ? activityLogs : []);
+    } catch (e) {
+      console.warn('Dashboard load warning:', e);
+    } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadDashboard();
+
     const unsubs = [
       dataService.subscribeToEnquiries(() => loadDashboard()),
       dataService.subscribeToCourses(() => loadDashboard()),
       dataService.subscribeToFaculty(() => loadDashboard()),
-      dataService.subscribeToGallery(() => loadDashboard())
+      dataService.subscribeToGallery(() => loadDashboard()),
+      dataService.subscribeToActivityLog((logEvent) => {
+        // Immediate update from realtime event
+        if (logEvent?.record) {
+          setActivities(prev => [logEvent.record, ...prev.filter(a => a.id !== logEvent.record.id)].slice(0, 15));
+        } else {
+          loadDashboard();
+        }
+      })
     ];
+
     return () => {
       unsubs.forEach(fn => fn && fn());
     };
@@ -61,7 +147,7 @@ export default function AdminDashboard() {
 
   const statCards = [
     {
-      title: 'Total Courses',
+      title: 'Active Courses',
       value: stats.courses,
       path: '/admin/courses',
       icon: BookOpen,
@@ -77,15 +163,15 @@ export default function AdminDashboard() {
       bg: 'bg-indigo-50 border-indigo-100'
     },
     {
-      title: 'Gallery Images',
-      value: stats.gallery,
+      title: 'Total Gallery Items',
+      value: stats.galleryTotal,
       path: '/admin/gallery',
       icon: ImageIcon,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50 border-emerald-100'
     },
     {
-      title: 'New Enquiries',
+      title: 'Pending Enquiries',
       value: stats.newEnquiries,
       path: '/admin/enquiries',
       icon: Inbox,
@@ -103,29 +189,43 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Welcome Banner */}
+      {/* Welcome Banner with Multi-Admin & Realtime Status (Requirements 5, 6, 33, 34) */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-brand-border shadow-soft flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-brand-secondary border border-blue-100 mb-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-brand-accent" />
-            <span>Active Management Session</span>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-brand-secondary border border-blue-100">
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-accent" />
+              <span>Multi-Admin Realtime Suite</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-ping'}`} />
+              <span>{isConnected ? 'PostgreSQL Realtime Active' : 'Connecting to Live Sync...'}</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{adminCount} Administrator{adminCount > 1 ? 's' : ''} Online</span>
+            </div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-brand-primary">
-            MAX Institutional Overview
+
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-brand-primary tracking-tight">
+            MAX Educational Institution Admin Overview
           </h1>
-          <p className="text-xs sm:text-sm text-brand-muted mt-1">
-            Real-time management for courses, faculty, reviews, galleries, and incoming student enquiries.
+          <p className="text-xs sm:text-sm text-brand-muted mt-1 max-w-2xl leading-relaxed">
+            All updates synchronize instantly across all connected administrator devices and the public website via Supabase Postgres Realtime.
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2.5">
-          <Link to="/admin/courses">
+          <Link to="/admin/gallery">
             <Button variant="primary" size="sm" icon={PlusCircle}>
-              Manage Courses
+              Manage Gallery
             </Button>
           </Link>
-          <Link to="/admin/enquiries">
-            <Button variant="outline" size="sm" icon={Inbox}>
-              View Enquiries
+          <Link to="/admin/settings">
+            <Button variant="outline" size="sm" icon={SettingsIcon}>
+              Site Settings
             </Button>
           </Link>
         </div>
@@ -163,63 +263,160 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {/* Recent Enquiries & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Recent Enquiries Table */}
-        <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-brand-border shadow-soft">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-brand-primary">Recent Student Enquiries</h2>
-              <p className="text-xs text-brand-muted">Latest submissions from the website enquiry forms</p>
+      {/* Gallery Breakdown Dashboard (Requirement 33: Total, Published, Unpublished, Images, Videos) */}
+      <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-soft">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-brand-primary flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-emerald-600" />
+              <span>Media & Gallery Breakdown</span>
+            </h3>
+            <p className="text-xs text-brand-muted">Comprehensive inventory of campus photos and video media</p>
+          </div>
+          <Link to="/admin/gallery" className="text-xs font-bold text-brand-secondary hover:underline">
+            Open Media Library →
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <div className="p-4 rounded-2xl bg-brand-bg border border-brand-border">
+            <span className="text-[11px] font-bold text-brand-muted uppercase block">Total Items</span>
+            <span className="text-2xl font-extrabold text-brand-primary">{stats.galleryTotal}</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100">
+            <span className="text-[11px] font-bold text-emerald-800 uppercase flex items-center gap-1 mb-0.5">
+              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Published</span>
+            </span>
+            <span className="text-2xl font-extrabold text-emerald-900">{stats.galleryPublished}</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-100">
+            <span className="text-[11px] font-bold text-amber-800 uppercase flex items-center gap-1 mb-0.5">
+              <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+              <span>Unpublished</span>
+            </span>
+            <span className="text-2xl font-extrabold text-amber-900">{stats.galleryUnpublished}</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100">
+            <span className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-1 mb-0.5">
+              <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+              <span>Photos</span>
+            </span>
+            <span className="text-2xl font-extrabold text-blue-900">{stats.galleryImages}</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
+            <span className="text-[11px] font-bold text-purple-800 uppercase flex items-center gap-1 mb-0.5">
+              <VideoIcon className="w-3.5 h-3.5 text-purple-600" />
+              <span>Videos</span>
+            </span>
+            <span className="text-2xl font-extrabold text-purple-900">{stats.galleryVideos}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Two Column Section: Recent Activity Feed + Enquiries */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        {/* Left Column: Recent Activity Feed (Requirements 19 & 20) */}
+        <div className="lg:col-span-6 bg-white rounded-3xl p-6 border border-brand-border shadow-soft">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-brand-border">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 text-brand-secondary flex items-center justify-center">
+                <Activity className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-brand-primary">Live Admin Activity Feed</h2>
+                <p className="text-xs text-brand-muted">Real-time audit log of multi-admin modifications</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <Radio className="w-3 h-3 text-emerald-600 animate-pulse" />
+              <span>Realtime</span>
+            </span>
+          </div>
+
+          <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
+            {activities.length > 0 ? (
+              activities.map((act) => (
+                <div key={act.id || act.created_at} className="flex items-start gap-3 p-3 rounded-2xl hover:bg-brand-bg transition-colors border border-transparent hover:border-brand-border/60">
+                  <div className="w-2.5 h-2.5 rounded-full bg-brand-secondary mt-1.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-semibold text-brand-primary leading-snug">
+                      {formatActivityMessage(act)}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-brand-muted">
+                      <span>{timeAgo(act.created_at)}</span>
+                      <span>•</span>
+                      <span className="font-mono text-[10px] uppercase bg-gray-100 px-1.5 py-0.5 rounded text-slate-600">
+                        {act.table_name || 'system'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs text-brand-muted">
+                No administrative activity logged recently. Changes by any admin will appear here in real-time.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Recent Student Enquiries */}
+        <div className="lg:col-span-6 bg-white rounded-3xl p-6 border border-brand-border shadow-soft">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-brand-border">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Inbox className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-brand-primary">Recent Student Enquiries</h2>
+                <p className="text-xs text-brand-muted">Latest submissions from website enquiry forms</p>
+              </div>
             </div>
             <Link to="/admin/enquiries" className="text-xs font-bold text-brand-secondary hover:text-brand-primary">
-              View All Enquiries →
+              View All →
             </Link>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
+            <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-brand-border text-brand-muted uppercase text-[11px] font-bold tracking-wider">
-                  <th className="pb-3 font-bold">Student Name</th>
-                  <th className="pb-3 font-bold">Course</th>
-                  <th className="pb-3 font-bold">Phone</th>
-                  <th className="pb-3 font-bold">Status</th>
-                  <th className="pb-3 font-bold text-right">Action</th>
+                <tr className="border-b border-brand-border text-brand-muted uppercase text-[10px] font-bold tracking-wider">
+                  <th className="pb-2.5 font-bold">Student</th>
+                  <th className="pb-2.5 font-bold">Course</th>
+                  <th className="pb-2.5 font-bold">Phone</th>
+                  <th className="pb-2.5 font-bold">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border/60">
                 {recentEnquiries.length > 0 ? (
                   recentEnquiries.map((enq) => (
                     <tr key={enq.id} className="hover:bg-brand-bg/50 transition-colors">
-                      <td className="py-3.5 font-bold text-brand-primary">
+                      <td className="py-3 font-bold text-brand-primary">
                         {enq.name}
                       </td>
-                      <td className="py-3.5 text-brand-text">
-                        {enq.course_name || 'General Enquiry'}
+                      <td className="py-3 text-brand-text truncate max-w-[120px]">
+                        {enq.course_name || 'General'}
                       </td>
-                      <td className="py-3.5 text-brand-muted font-mono">
+                      <td className="py-3 text-brand-muted font-mono text-[11px]">
                         {enq.phone}
                       </td>
-                      <td className="py-3.5">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusStyles[enq.status] || 'bg-gray-100 text-gray-700'}`}>
+                      <td className="py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[enq.status] || 'bg-gray-100 text-gray-700'}`}>
                           {enq.status}
                         </span>
-                      </td>
-                      <td className="py-3.5 text-right">
-                        <Link
-                          to="/admin/enquiries"
-                          className="font-bold text-brand-secondary hover:text-brand-primary text-xs"
-                        >
-                          Details
-                        </Link>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-brand-muted text-xs">
-                      No enquiries registered yet.
+                    <td colSpan={4} className="py-8 text-center text-brand-muted text-xs">
+                      No student enquiries registered yet.
                     </td>
                   </tr>
                 )}
@@ -228,64 +425,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Quick Admin Navigation Card */}
-        <div className="lg:col-span-4 bg-white rounded-3xl p-6 border border-brand-border shadow-soft flex flex-col justify-between">
-          <div>
-            <h3 className="text-base font-bold text-brand-primary mb-1">Administrative Shortcuts</h3>
-            <p className="text-xs text-brand-muted mb-6">Quick access to frequently updated institutional sections</p>
-
-            <div className="space-y-3">
-              <Link
-                to="/admin/courses"
-                className="flex items-center justify-between p-3 rounded-xl bg-brand-bg hover:bg-blue-50 text-xs font-bold text-brand-primary transition-colors border border-brand-border"
-              >
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-4 h-4 text-brand-secondary" />
-                  <span>Add or Edit Course</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-400" />
-              </Link>
-
-              <Link
-                to="/admin/faculty"
-                className="flex items-center justify-between p-3 rounded-xl bg-brand-bg hover:bg-blue-50 text-xs font-bold text-brand-primary transition-colors border border-brand-border"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Users className="w-4 h-4 text-brand-secondary" />
-                  <span>Update Faculty Team</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-400" />
-              </Link>
-
-              <Link
-                to="/admin/gallery"
-                className="flex items-center justify-between p-3 rounded-xl bg-brand-bg hover:bg-blue-50 text-xs font-bold text-brand-primary transition-colors border border-brand-border"
-              >
-                <div className="flex items-center gap-2.5">
-                  <ImageIcon className="w-4 h-4 text-brand-secondary" />
-                  <span>Upload Campus Photos</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-400" />
-              </Link>
-
-              <Link
-                to="/admin/settings"
-                className="flex items-center justify-between p-3 rounded-xl bg-brand-bg hover:bg-blue-50 text-xs font-bold text-brand-primary transition-colors border border-brand-border"
-              >
-                <div className="flex items-center gap-2.5">
-                  <SettingsIcon className="w-4 h-4 text-brand-secondary" />
-                  <span>Institution Details & Phone</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-400" />
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-8 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 leading-relaxed">
-            <span className="font-bold block mb-1">Live Database Status</span>
-            Site changes saved in this panel update live on the public website and persist safely.
-          </div>
-        </div>
       </div>
     </div>
   );

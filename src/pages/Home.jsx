@@ -26,6 +26,7 @@ import ReviewCard from '../components/ReviewCard';
 import GalleryCard from '../components/GalleryCard';
 import Modal from '../components/Modal';
 import Toast, { useToast } from '../components/Toast';
+import GoogleMapSection from '../components/GoogleMapSection';
 
 import AnnouncementsBanner from '../components/AnnouncementsBanner';
 
@@ -556,17 +557,28 @@ export default function Home({ settings }) {
               </p>
 
               <div className="space-y-6">
-                <div className="flex items-start gap-4 p-5 rounded-2xl bg-white border border-brand-border shadow-sm">
-                  <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-primary flex items-center justify-center shrink-0">
-                    <MapPin className="w-5 h-5 text-brand-secondary" />
+                <a
+                  href={settings?.google_maps_url || 'https://maps.app.goo.gl/Sa1JdFdKU7XJJmdd6'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-4 p-5 rounded-2xl bg-white border border-brand-border shadow-sm hover:border-brand-secondary/40 hover:shadow-md transition-all group block"
+                  title="Open MAX Educational Institution in Google Maps"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-primary flex items-center justify-center shrink-0 group-hover:bg-brand-primary group-hover:text-white transition-colors">
+                    <MapPin className="w-5 h-5 text-brand-secondary group-hover:text-brand-accent transition-colors" />
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-brand-primary mb-1">Campus Location</h4>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-brand-primary mb-1">Campus Location</h4>
+                      <span className="text-[11px] font-bold text-brand-secondary group-hover:underline">
+                        View on Map ↗
+                      </span>
+                    </div>
                     <p className="text-xs sm:text-sm text-brand-muted leading-relaxed">
                       {settings?.address || '1st Floor, Trivandrum–Nagercoil Highway, Opposite Mosque, Azhagiyamandapam, Mulagamooddu, Tamil Nadu – 629167'}
                     </p>
                   </div>
-                </div>
+                </a>
 
                 <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-brand-border shadow-sm">
                   <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-primary flex items-center justify-center shrink-0">
@@ -698,6 +710,9 @@ export default function Home({ settings }) {
           </div>
         </div>
       </section>
+
+      {/* Verified Google Maps Campus Location */}
+      <GoogleMapSection settings={settings} />
 
       {/* Course Details Modal */}
       <Modal
